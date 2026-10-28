@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>セグメント業績チャート</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f2f3f5;--ink:#111827;--mute:#6b7280;--line:#e5e7eb;--soft:#f3f4f6;--acc:#111827}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:'Noto Sans JP','Hiragino Sans','Hiragino Kaku Gothic ProN','Yu Gothic UI','Meiryo',sans-serif;color:var(--ink);background:var(--bg);font-size:13px;-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-columns:304px minmax(0,1fr);min-height:100vh}
+.side{background:#fff;border-right:1px solid var(--line);padding:18px 18px 48px;overflow:auto;height:100vh;position:sticky;top:0}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;margin-bottom:16px}
+.brand i{display:inline-flex;gap:2px;align-items:flex-end;height:18px}
+.brand i b{display:block;width:4px;border-radius:1px}
+section{padding:14px 0 16px;border-top:1px solid var(--line)}
+h3{font-size:11px;font-weight:700;color:var(--mute);letter-spacing:.08em;margin:0 0 10px}
+.tabs{display:flex;background:var(--soft);border-radius:8px;padding:3px;gap:2px;margin-bottom:10px}
+.tabs button{flex:1;border:0;background:transparent;padding:6px 0;border-radius:6px;font:inherit;font-size:12px;color:var(--mute);cursor:pointer}
+.tabs button:disabled{opacity:.35;cursor:default}
+.tabs button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.1);font-weight:500}
+.pane{display:none}.pane.on{display:block}
+.note{color:var(--mute);font-size:11.5px;line-height:1.6;margin:0 0 8px}
+textarea{width:100%;height:78px;border:1px solid var(--line);border-radius:8px;padding:8px;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;resize:vertical;margin-bottom:6px;background:#fafafa}
+textarea:focus,input:focus,select:focus{outline:2px solid #c7d2fe;outline-offset:0;border-color:#a5b4fc}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 12px;font:inherit;font-size:12px;cursor:pointer;color:var(--ink)}
+.btn:hover{background:var(--soft)}
+.btn.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+.btn.primary:hover{background:#374151}
+.btn.sm{padding:5px 9px;font-size:11.5px}
+.btn.full{width:100%}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+.drop{display:block;border:1.5px dashed #cbd5e1;border-radius:10px;padding:16px 10px;text-align:center;color:var(--mute);cursor:pointer;font-size:12px;line-height:1.6;position:relative}
+.drop:hover,.drop.over{border-color:#6366f1;background:#f5f7ff}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.status{margin-top:10px;font-size:11.5px;color:var(--mute);line-height:1.6}
+.status.err{color:#b91c1c}
+.status b{color:var(--ink);font-weight:500}
+.field{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0}
+.field>span{color:#374151;white-space:nowrap}
+.field input[type=text],.field input[type=number],.field select{width:150px;border:1px solid var(--line);border-radius:7px;padding:5px 8px;font:inherit;font-size:12px;background:#fff}
+.field input.wide{width:100%}
+.stack{margin:8px 0}.stack>span{display:block;color:#374151;margin-bottom:4px}
+.stack input[type=text]{width:100%;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12px}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.rangehead{display:flex;justify-content:space-between;align-items:baseline;margin-top:4px}
+.rangehead b{font-size:15px;font-variant-numeric:tabular-nums}
+.sw-toggle{position:relative;width:34px;height:20px;flex:none}
+.sw-toggle input{opacity:0;width:0;height:0}
+.sw-toggle i{position:absolute;inset:0;background:#d1d5db;border-radius:20px;transition:.15s;cursor:pointer}
+.sw-toggle i:after{content:"";position:absolute;left:3px;top:3px;width:14px;height:14px;background:#fff;border-radius:50%;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.sw-toggle input:checked+i{background:var(--acc)}
+.sw-toggle input:checked+i:after{transform:translateX(14px)}
+.segrow{display:grid;grid-template-columns:18px 30px 1fr auto;align-items:center;gap:8px;padding:6px 6px;border-radius:8px}
+.segrow:hover{background:var(--soft)}
+.segrow.off .nm{opacity:.4}
+.segrow input[type=checkbox]{accent-color:var(--acc);margin:0}
+.chip{position:relative;width:30px;height:22px;border-radius:6px;overflow:hidden;cursor:pointer;background:linear-gradient(var(--t) 0 50%,var(--c) 50% 100%);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.chip input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.nm{min-width:0;line-height:1.3}
+.nm div{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nm small{display:block;color:var(--mute);font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mv{display:flex;flex-direction:column}
+.mv button{border:0;background:none;color:#9ca3af;font-size:9px;line-height:1;padding:2px 4px;cursor:pointer}
+.mv button:hover:not(:disabled){color:var(--ink)}
+.mv button:disabled{opacity:.25;cursor:default}
+.palettes{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0 8px}
+.pal{display:flex;flex-direction:column;gap:4px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:#fff;cursor:pointer;font:inherit;font-size:11px;color:#374151;text-align:left}
+.pal:hover{border-color:#9ca3af}
+.pal span{display:flex;gap:2px}.pal span i{flex:1;height:8px;border-radius:2px}
+.colorfield input[type=color]{width:34px;height:24px;border:1px solid var(--line);border-radius:6px;padding:1px;background:#fff;cursor:pointer}
+.main{padding:24px 28px;min-width:0}
+.card{background:#fff;border-radius:16px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 10px 30px rgba(17,24,39,.05);padding:20px 22px 14px}
+#chart{width:100%;min-height:300px;position:relative}
+#chart svg{display:block}
+.svgwrap{position:relative;width:max-content;margin:0 auto}
+.rz{position:absolute;right:-6px;bottom:-6px;width:18px;height:18px;cursor:nwse-resize;border-radius:4px;opacity:.35;transition:opacity .15s;touch-action:none;
+  background:linear-gradient(135deg,transparent 0 45%,#6b7280 45% 52%,transparent 52% 62%,#6b7280 62% 69%,transparent 69% 79%,#6b7280 79% 86%,transparent 86%)}
+.svgwrap:hover .rz,.rz.on{opacity:1}
+.rzlab{position:absolute;right:16px;bottom:16px;background:#111827;color:#fff;font-size:11.5px;padding:4px 9px;border-radius:999px;pointer-events:none;opacity:0;transition:opacity .1s;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rzlab.on{opacity:1}
+.card{overflow:auto}
+.pair{display:flex;align-items:center;gap:4px;color:var(--mute)}
+.pair input{width:64px!important;text-align:right}
+.empty{display:flex;align-items:center;justify-content:center;height:420px;color:var(--mute)}
+.foot{display:flex;justify-content:space-between;color:var(--mute);font-size:11.5px;margin-top:10px;padding:0 4px}
+#tip{position:fixed;pointer-events:none;background:rgba(17,24,39,.94);color:#fff;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.55;opacity:0;transition:opacity .08s;z-index:20;min-width:170px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+#tip .h{display:flex;align-items:center;gap:6px;font-weight:700;margin-bottom:4px}
+#tip .h i{width:9px;height:9px;border-radius:2px;display:inline-block}
+#tip .p{color:#9ca3af;font-size:11px;margin-bottom:6px}
+#tip table{border-collapse:collapse;width:100%}
+#tip td{padding:1px 0}
+#tip td:nth-child(2){text-align:right;font-variant-numeric:tabular-nums;padding-left:14px;font-weight:500}
+#tip td:nth-child(3){text-align:right;color:#9ca3af;font-size:10.5px;padding-left:8px;font-variant-numeric:tabular-nums}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#111827;color:#fff;padding:9px 16px;border-radius:999px;font-size:12px;opacity:0;transition:.2s;pointer-events:none;z-index:30}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+body:not(.gas) .gas-only{display:none!important}
+body:not(.web) .web-only{display:none!important}
+body.web .noweb{display:none!important}
+body.gas .nogas{display:none!important}
+@media (max-width:900px){.app{grid-template-columns:1fr}.side{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}.main{padding:14px}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="side">
+  <div class="brand"><i><b style="height:9px;background:#9bd3a2"></b><b style="height:14px;background:#3f9b4b"></b><b style="height:11px;background:#f4b98d"></b><b style="height:18px;background:#e47a2e"></b></i>セグメント業績チャート</div>
+
+  <section>
+    <h3>データ</h3>
+    <div class="tabs" id="tabs">
+      <button data-tab="sheet">Googleシート</button>
+      <button data-tab="paste">貼り付け</button>
+      <button data-tab="file">ファイル</button>
+      <button data-tab="sample">サンプル</button>
+    </div>
+    <div class="pane" data-pane="sheet">
+      <p class="note">GoogleスプレッドシートのURLを貼って「読み込む」。売上高・利益（四半期／年度）のシートと segments / config を自動で判別します。<span class="nogas noweb">Claudeの「Google Sheets」連携を使い、見ている人の権限で読み込みます。</span><span class="web-only"><br>スプレッドシートで「ファイル → 共有 → ウェブに公開」→「ドキュメント全体」「Microsoft Excel (.xlsx)」で発行したURLを貼ってください。</span><span class="gas-only">読み込んだシートはページのURLに記録されるので、ブックマークや共有ができます。</span></p>
+      <input type="text" id="sheetUrl" list="recentSheets" placeholder="https://docs.google.com/spreadsheets/d/…" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:7px 8px;font:inherit;font-size:12px;margin-bottom:6px">
+      <datalist id="recentSheets"></datalist>
+      <button class="btn primary full" id="reloadSheet">読み込む / 再読み込み</button>
+    </div>
+    <div class="pane" data-pane="paste">
+      <p class="note">スプレッドシートで <b>data</b> シートを全選択（Ctrl/⌘+A）→ コピーして貼り付け。色や表示名を指定した <b>segments</b>・<b>config</b> シートは下の欄に（任意・複数可、空行で区切る）。</p>
+      <textarea id="pasteData" placeholder="data シート（必須）&#10;セグメント	期	売上	営業利益&#10;電子材料	2024 1Q	2370	970"></textarea>
+      <textarea id="pasteExtra" placeholder="segments / config シート（任意）"></textarea>
+      <button class="btn primary full" id="applyPaste">読み込む</button>
+    </div>
+    <div class="pane" data-pane="file">
+      <label class="drop" id="drop"><input type="file" id="fileIn" accept=".xlsx,.xls,.csv,.tsv,.txt">
+        <b style="color:#374151">.xlsx / .csv をドロップ</b><br>またはクリックして選択<br>
+        <small>Googleスプレッドシートは<br>「ファイル → ダウンロード → .xlsx」</small></label>
+    </div>
+    <div class="pane" data-pane="sample">
+      <p class="note">画像から目視で読み取った概算値のサンプルです。テンプレートは config・segments と、売上高／利益 × 四半期／年度 の4シート構成です。</p>
+      <div class="btns"><button class="btn" id="loadSample">サンプルを表示</button><button class="btn" id="dlTemplate">テンプレート (.xlsx)</button></div>
+    </div>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section>
+    <h3>表示期間</h3>
+    <div class="tabs" id="granTabs"><button data-g="Q">四半期</button><button data-g="Y">年度</button></div>
+    <div class="rangehead"><span id="nQlab">四半期数</span><b id="nQv">–</b></div>
+    <input type="range" id="nQ" min="3" max="30" value="20">
+    <div class="field"><span>最終期</span><select id="endP"></select></div>
+    <div class="field"><span>抜けている期も枠を空ける</span><label class="sw-toggle"><input type="checkbox" id="oGaps"><i></i></label></div>
+  </section>
+
+  <section>
+    <h3>セグメント <span style="font-weight:400;letter-spacing:0">— 色をクリックで変更 / ▲▼で並べ替え</span></h3>
+    <div id="segList"></div>
+    <div class="palettes" id="palettes"></div>
+    <div class="btns">
+      <button class="btn sm" id="resetColors">シートの色に戻す</button>
+      <button class="btn sm gas-only" id="saveColors">色をシートに保存</button>
+      <button class="btn sm nogas" id="copyColors">色設定をコピー</button>
+    </div>
+  </section>
+
+  <section>
+    <h3>通貨・単位</h3>
+    <div class="field"><span>データの通貨</span><select id="oCur"></select></div>
+    <div class="field" id="wrapCurCustom"><span>通貨名</span><input type="text" id="oCurCustom" placeholder="例: リンギット"></div>
+    <div class="field"><span>データの単位</span><select id="oDataUnit">
+      <option value="1">そのまま</option><option value="1e3">千</option><option value="1e6">百万</option><option value="1e8">億</option><option value="1e9">十億</option></select></div>
+    <div class="field"><span>表示の単位</span><select id="oDispUnit">
+      <option value="auto">自動</option><option value="1e6">百万</option><option value="1e8">億</option><option value="1e9">十億</option><option value="1e12">兆</option></select></div>
+    <div class="field"><span>表示の通貨</span><select id="oDispCur"></select></div>
+    <div class="field" id="wrapFx"><span id="fxLab1">1 ドル =</span><span class="pair"><input type="number" id="oFx" step="any" placeholder="レート" style="width:90px!important"><span id="fxLab2">円</span></span></div>
+    <p class="note" id="unitNote" style="margin-top:6px"></p>
+  </section>
+
+  <section>
+    <h3>表示</h3>
+    <div class="stack"><span>企業名</span><input type="text" id="oCompany" placeholder="例: 信越化学"></div>
+    <div class="stack"><span>タイトル <small style="color:var(--mute)">（空欄で「企業名 セグメント別業績推移」）</small></span><input type="text" id="oTitle" placeholder="{企業名}　セグメント別業績推移"></div>
+    <div class="stack"><span>注記 <small style="color:var(--mute)">（左下に表示。出所など）</small></span><input type="text" id="oNote" placeholder="例: 出所：決算説明資料"></div>
+    <div class="field"><span>凡例</span><select id="oLegend"><option value="top">上（タイトル横）</option><option value="bottom">下</option><option value="none">表示しない</option></select></div>
+    <div class="field"><span>営業利益率の線</span><label class="sw-toggle"><input type="checkbox" id="oMargin"><i></i></label></div>
+    <div class="field"><span>最新の利益率を表示</span><label class="sw-toggle"><input type="checkbox" id="oLast"><i></i></label></div>
+    <div class="field"><span>最新の売上・利益を表示</span><label class="sw-toggle"><input type="checkbox" id="oLastBar"><i></i></label></div>
+    <div class="field colorfield"><span>利益率の線の色</span><input type="color" id="oMColor"></div>
+  </section>
+
+  <section>
+    <h3>サイズ・縦横比</h3>
+    <div class="field"><span>縦横比</span><select id="oRatio">
+      <option value="fit">画面幅に合わせる</option>
+      <option value="16:9">16:9（スライド）</option>
+      <option value="4:3">4:3</option>
+      <option value="3:2">3:2</option>
+      <option value="21:9">21:9（横長）</option>
+      <option value="1:1">1:1（正方形）</option>
+      <option value="4:5">4:5（縦長）</option>
+      <option value="9:16">9:16（縦長）</option>
+      <option value="custom">比率を指定</option>
+      <option value="px">サイズを指定（px）</option>
+    </select></div>
+    <div class="field" id="wrapRatio"><span>比率（横:縦）</span><span class="pair"><input type="number" id="oRW" min="1" step="0.1">:<input type="number" id="oRH" min="1" step="0.1"></span></div>
+    <div class="field" id="wrapPx"><span>幅 × 高さ</span><span class="pair"><input type="number" id="oPW" min="360" step="10">×<input type="number" id="oPH" min="240" step="10"></span></div>
+    <div id="wrapH"><div class="rangehead"><span>高さ</span><b id="oHv" style="font-size:12px">560</b></div>
+    <input type="range" id="oH" min="300" max="1000" step="10"></div>
+    <p class="note" style="margin-top:8px">グラフ右下の角をドラッグすると自由にサイズを変えられます（Shiftを押しながらで比率を固定）。</p>
+  </section>
+
+  <section>
+    <h3>軸（空欄で自動）</h3>
+    <div class="field"><span>左軸の最大値</span><input type="number" id="oYMax" placeholder="自動"></div>
+    <div class="field"><span>右軸の最大値（%）</span><input type="number" id="oRMax" placeholder="自動"></div>
+  </section>
+
+  <section>
+    <h3>書き出し</h3>
+    <div class="btns">
+      <button class="btn primary" id="dlPng">PNG</button>
+      <button class="btn" id="dlSvg">SVG</button>
+      <button class="btn" id="copyPng">画像をコピー</button>
+    </div>
+  </section>
+</aside>
+
+<main class="main">
+  <div class="card"><div id="chart"><div class="empty">データを読み込んでください</div></div></div>
+  <div class="foot"><span id="footL"></span><span>グラフにカーソルを合わせると数値を表示</span></div>
+</main>
+</div>
+<div id="tip"></div>
+<div id="toast"></div>
+
+<script>window.SEGCHART_MODE = 'web';</script>
+<script>
+'use strict';
+/* =========================================================
+   設定・ユーティリティ
+   ========================================================= */
+const FONT = "'Noto Sans JP','Hiragino Sans','Hiragino Kaku Gothic ProN','Yu Gothic UI','Meiryo',sans-serif";
+const IS_GAS = typeof google !== 'undefined' && google.script && google.script.run;
+const IS_WEB = !IS_GAS && window.SEGCHART_MODE === 'web';  // GitHub Pages など普通のWebサイトとして置いた場合
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+const PALETTES = {
+  'クラシック': ['#3f9b4b','#e47a2e','#4a8ad4','#d4a72c','#8e5cc4','#2a9d8f','#d9536f','#6b7a8f'],
+  'モダン':     ['#2563eb','#f97316','#10b981','#a855f7','#e11d48','#0ea5e9','#eab308','#64748b'],
+  'くすみ':     ['#6d8b74','#c08457','#6b8bad','#b39a52','#9c7fa6','#5f9c97','#c27a85','#7c8691'],
+  'ネイビー':   ['#1e3a5f','#2f6690','#3a7ca5','#5fa8d3','#16425b','#4f6d7a','#81a4cd','#284b63'],
+};
+
+const _cx = document.createElement('canvas').getContext('2d');
+function normColor(c) {
+  if (c == null) return null;
+  c = String(c).trim();
+  if (!c) return null;
+  if (/^[0-9a-f]{6}$/i.test(c)) c = '#' + c;
+  _cx.fillStyle = '#010203'; _cx.fillStyle = c;
+  const v = _cx.fillStyle;
+  if (v === '#010203' && c.toLowerCase() !== '#010203') return null;
+  if (v[0] === '#') return v;
+  const m = v.match(/[\d.]+/g);
+  return m ? rgbHex(+m[0], +m[1], +m[2]) : null;
+}
+const hexRgb = h => { h = h.replace('#',''); return [0,2,4].map(i => parseInt(h.substr(i,2),16)); };
+const rgbHex = (r,g,b) => '#' + [r,g,b].map(x => Math.round(clamp(x,0,255)).toString(16).padStart(2,'0')).join('');
+const mix = (a,b,t) => { const A = hexRgb(a), B = hexRgb(b); return rgbHex(...A.map((v,i) => v + (B[i]-v)*t)); };
+const tint = c => mix(c, '#ffffff', 0.58);
+const shade = (c,t) => mix(c, '#000000', t);
+const lum = c => { const [r,g,b] = hexRgb(c); return (0.299*r + 0.587*g + 0.114*b) / 255; };
+function tw(text, size, weight = 400) { _cx.font = `${weight} ${size}px ${FONT}`; return _cx.measureText(String(text)).width; }
+
+function half(s) {
+  return String(s ?? '').replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
+}
+const normH = h => half(h).toLowerCase().replace(/[\s_\-（）()・\/:：]/g, '');
+function num(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  let s = half(v).trim();
+  if (!s || /^(-|—|–|n\/?a|na|#n\/a|―)$/i.test(s)) return null;
+  let neg = false;
+  if (/^[△▲]/.test(s)) { neg = true; s = s.slice(1); }
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  s = s.replace(/[,¥円\s]/g, '');
+  const pct = s.endsWith('%');
+  const n = parseFloat(s);
+  if (isNaN(n)) return null;
+  return (neg ? -n : n) * (pct ? 0.01 : 1);
+}
+
+/* 列名の候補（日英・表記ゆれに対応） */
+const H = {
+  seg:        ['セグメント','セグメント名','segment','部門','事業','事業領域','領域'],
+  period:     ['期','四半期','決算期','年度','会計年度','period','quarter','時期','fiscalyear','fy','year'],
+  sales:      ['売上','売上高','売上収益','sales','revenue','netsales'],
+  op:         ['営業利益','セグメント利益','事業利益','利益','operatingincome','operatingprofit','op'],
+  item:       ['項目','指標','item','metric'],
+  key:        ['項目','設定','設定項目','key'],
+  value:      ['値','設定値','value'],
+  label:      ['表示名','名称','label','name'],
+  subtitle:   ['サブタイトル','説明','補足','subtitle'],
+  color:      ['色','カラー','ベース色','color','colour'],
+  salesColor: ['売上色','salescolor'],
+  opColor:    ['利益色','営業利益色','opcolor'],
+  marginColor:['利益率色','利益率の色','margincolor'],
+  visible:    ['表示','visible','show'],
+};
+const HN = Object.fromEntries(Object.entries(H).map(([k, v]) => [k, v.map(normH)]));
+const findCol = (header, k) => { const hs = header.map(normH); return hs.findIndex(h => HN[k].includes(h)); };
+
+/* 期の解釈: 2021 1Q / 2021Q1 / FY2021 Q1 / 1Q 2021 / 2025年3月期 1Q / FY24 2Q など */
+function parsePeriod(raw) {
+  const s = half(raw).trim();
+  if (!s) return null;
+  let year = null, ylab = null, rest = s, m;
+  if ((m = s.match(/(\d{4})\s*年\s*(\d{1,2})\s*月期/))) { year = +m[1]; ylab = `${m[1]}/${m[2]}期`; rest = s.replace(m[0], ' '); }
+  else if ((m = s.match(/(FY|CY)?\s*'?(\d{4})(?!\d)/i))) { year = +m[2]; ylab = (m[1] ? m[1].toUpperCase() : '') + m[2]; rest = s.replace(m[0], ' '); }
+  else if ((m = s.match(/(FY|CY)\s*'?(\d{2})(?!\d)/i))) { year = 2000 + +m[2]; ylab = m[1].toUpperCase() + year; rest = s.replace(m[0], ' '); }
+  if (year == null) return null;
+  const q = rest.match(/Q\s*([1-4])|([1-4])\s*(?:Q|四半期)|第\s*([1-4])/i);
+  if (!q) return null;
+  const qq = +(q[1] || q[2] || q[3]);
+  return { key: year * 10 + qq, year, ylab, q: qq, qlab: qq + 'Q', raw: s };
+}
+
+/* 年度の解釈: FY2024 / 2024 / 2024年度 / 2025年3月期 など（四半期の表記がないもの） */
+function parseYear(raw) {
+  const s = half(raw).trim();
+  if (!s || /Q\s*[1-4]|[1-4]\s*(Q|四半期)|第\s*[1-4]/i.test(s)) return null;
+  let m;
+  if ((m = s.match(/(\d{4})\s*年\s*(\d{1,2})\s*月期/))) return { key: +m[1] * 10, year: +m[1], ylab: null, q: null, qlab: `${m[1]}/${m[2]}期`, raw: s, ann: true };
+  if ((m = s.match(/^(FY|CY)?\s*'?(\d{4})(?!\d)\s*(年度|年)?$/i))) return { key: +m[2] * 10, year: +m[2], ylab: null, q: null, qlab: (m[1] ? m[1].toUpperCase() : '') + m[2] + (m[3] === '年度' ? '年度' : ''), raw: s, ann: true };
+  if ((m = s.match(/^(FY|CY)\s*'?(\d{2})$/i))) { const y = 2000 + +m[2]; return { key: y * 10, year: y, ylab: null, q: null, qlab: m[1].toUpperCase() + y, raw: s, ann: true }; }
+  return null;
+}
+const parseAny = (raw, hint) => hint === 'Y' ? (parseYear(raw) || parsePeriod(raw)) : (parsePeriod(raw) || parseYear(raw));
+
+/* CSV / TSV パーサ（引用符・セル内改行に対応） */
+function parseDelimited(text) {
+  text = String(text || '').replace(/\r\n?/g, '\n');
+  const firstLine = text.split('\n').find(l => l.trim()) || '';
+  const d = firstLine.includes('\t') ? '\t' : ',';
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === '"') { if (text[i+1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += ch;
+    } else if (ch === '"' && cell === '') q = true;
+    else if (ch === d) { row.push(cell); cell = ''; }
+    else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += ch;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+/* 空行で区切られた複数の表を分割 */
+function splitBlocks(rows) {
+  const out = []; let cur = [];
+  rows.forEach(r => {
+    if (r.every(c => String(c).trim() === '')) { if (cur.length) out.push(cur); cur = []; }
+    else cur.push(r);
+  });
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+/* =========================================================
+   データモデル構築
+   ========================================================= */
+function classify(rows) {
+  const filled = r => r && r.filter(c => String(c ?? '').trim() !== '').length;
+  const hi = rows.findIndex(r => filled(r) >= 2);
+  if (hi < 0) return null;
+  const header = rows[hi].map(c => String(c ?? '').trim());
+  const body = [];
+  for (let i = hi + 1; i < rows.length; i++) if (filled(rows[i])) body.push({ r: rows[i], i });
+  const c = k => findCol(header, k);
+  if (c('value') >= 0 && c('key') >= 0 && c('period') < 0) return { type: 'config', header, body };
+  if (c('period') >= 0 && (c('sales') >= 0 || c('op') >= 0)) return { type: 'long', header, body };
+  const periodCols = header.map((h, i) => parsePeriod(h) ? i : -1).filter(i => i >= 0);
+  if (periodCols.length && c('seg') >= 0 && c('item') >= 0) return { type: 'wide', header, body, periodCols };
+  if (c('seg') >= 0 && ['color','subtitle','visible','label','salesColor','opColor'].some(k => c(k) >= 0)) return { type: 'segments', header, body };
+  // 期 × セグメント の表（行＝期、列＝セグメント）。シート名や表の上の見出しで 売上/利益・四半期/年度 を判別
+  const pi = c('period');
+  if (pi >= 0 && c('seg') < 0 && c('key') < 0 && header.some((h, i) => i !== pi && h)) {
+    const above = rows.slice(0, hi).map(r => (r || []).join(' '));
+    return { type: 'matrix', header, body, pi, above };
+  }
+  return null;
+}
+function matrixKind(sources) {
+  // シート名 → 表の上の行 の順に見て、最初に判別できたものを使う
+  const out = { metric: null, gran: null };
+  sources.forEach(src => { const k = matrixKind1(src); if (!out.metric) out.metric = k.metric; if (!out.gran) out.gran = k.gran; });
+  return out;
+}
+function matrixKind1(text) {
+  const t = half(text);
+  const hasS = /売上|売上高|売上収益|revenue|sales/i.test(t), hasO = /利益|損益|profit|income|ebit/i.test(t);
+  let metric = null;
+  if (hasO && !hasS) metric = 'op';
+  else if (hasS && !hasO) metric = 'sales';
+  else if (hasS && hasO) metric = /営業利益|セグメント利益|事業利益|operating/i.test(t) ? 'op' : 'sales';
+  const isQ = /四半期|quarter/i.test(t), isY = /年度|通期|年次|annual|yearly|full.?year/i.test(t);
+  const gran = isQ && !isY ? 'Q' : isY && !isQ ? 'Y' : null;
+  return { metric, gran };
+}
+
+function buildModel(tables, paletteName) {
+  const recs = [], segMeta = [], cfg = {}, notes = [];
+  let segTable = null, found = { long: 0, wide: 0, matrix: 0, segments: 0, config: 0 };
+  const validBg = c => (c && !/^#?(ffffff|fff)$/i.test(c) && c !== 'white') ? normColor(c) : null;
+  for (const t of tables) {
+    const cl = classify(t.rows || []);
+    if (!cl) continue;
+    found[cl.type]++;
+    const { header, body } = cl;
+    const col = k => findCol(header, k);
+    if (cl.type === 'config') {
+      const ki = col('key'), vi = col('value');
+      body.forEach(({ r }) => { const k = normH(r[ki]); if (k) cfg[k] = String(r[vi] ?? '').trim(); });
+    } else if (cl.type === 'long') {
+      const si = col('seg'), pi = col('period'), sa = col('sales'), oi = col('op');
+      body.forEach(({ r }) => {
+        const seg = si >= 0 ? String(r[si] ?? '').trim() : (t.name || 'セグメント');
+        const p = String(r[pi] ?? '').trim();
+        if (!seg || !p) return;
+        recs.push({ seg, p, sales: sa >= 0 ? num(r[sa]) : null, op: oi >= 0 ? num(r[oi]) : null });
+      });
+    } else if (cl.type === 'wide') {
+      const si = col('seg'), ii = col('item');
+      body.forEach(({ r }) => {
+        const seg = String(r[si] ?? '').trim(), it = normH(r[ii]);
+        const which = HN.sales.includes(it) ? 'sales' : HN.op.includes(it) ? 'op' : null;
+        if (!seg || !which) return;
+        cl.periodCols.forEach(pc => recs.push({ seg, p: header[pc], sales: null, op: null, [which]: num(r[pc]) }));
+      });
+    } else if (cl.type === 'matrix') {
+      const k = matrixKind([t.name || '', ...cl.above]);
+      if (!k.metric) { notes.push(`「${t.name}」が売上高か利益か判別できませんでした（シート名に「売上」か「利益」を入れてください）`); continue; }
+      body.forEach(({ r }) => {
+        const p = String(r[cl.pi] ?? '').trim();
+        if (!p) return;
+        header.forEach((h, j) => {
+          if (j === cl.pi || !h) return;
+          const v = num(r[j]);
+          if (v == null) return;
+          recs.push({ seg: h, p, sales: k.metric === 'sales' ? v : null, op: k.metric === 'op' ? v : null, hint: k.gran });
+        });
+      });
+    } else if (cl.type === 'segments') {
+      segTable = t.name || segTable;
+      const si = col('seg'), li = col('label'), sbi = col('subtitle'), vi = col('visible');
+      body.forEach(({ r, i }) => {
+        const name = String(r[si] ?? '').trim();
+        if (!name) return;
+        const bg = (t.bgs && t.bgs[i]) || [];
+        const pick = k => { const ci = col(k); return ci < 0 ? null : (normColor(r[ci]) || validBg(bg[ci])); };
+        const vis = vi >= 0 ? String(r[vi] ?? '').trim() : '';
+        segMeta.push({
+          name,
+          label: li >= 0 && String(r[li] ?? '').trim() ? String(r[li]).trim() : name,
+          subtitle: sbi >= 0 ? String(r[sbi] ?? '').trim() : '',
+          sheetColor: pick('color') || validBg(bg[si]),
+          salesColor: pick('salesColor'),
+          opColor: pick('opColor'),
+          marginColor: pick('marginColor'),
+          visible: !/^(false|0|no|off|×|x|いいえ|非表示|なし)$/i.test(vis),
+        });
+      });
+    }
+  }
+  if (!recs.length) return { error: 'データ（セグメント／期／売上／営業利益 の列を持つ表）が見つかりませんでした。' };
+
+  // 期（四半期 / 年度 に振り分け）
+  const views = { Q: { periods: [], values: {} }, Y: { periods: [], values: {} } };
+  const segOrder = [], bad = [];
+  const pk = new Map();
+  recs.forEach(r => { const k = r.p + '|' + (r.hint || ''); if (!pk.has(k)) pk.set(k, parseAny(r.p, r.hint)); r.pp = pk.get(k); if (!r.pp && !bad.includes(r.p)) bad.push(r.p); });
+  if (recs.every(r => !r.pp)) {
+    // どれも解釈できない → 並び順どおりの1系列
+    const order = [];
+    recs.forEach(r => { if (!order.includes(r.p)) order.push(r.p); r.pp = { key: order.indexOf(r.p), ylab: null, q: null, qlab: r.p, raw: r.p }; });
+    notes.push(`期の形式（例: ${bad.slice(0, 3).join('、')}）を解釈できなかったため、並び順どおりに表示しています`);
+    recs.forEach(r => r.g = 'Q');
+  } else {
+    if (bad.length) notes.push(`解釈できない期を飛ばしました（例: ${bad.slice(0, 3).join('、')}）`);
+    recs.forEach(r => { if (r.pp) r.g = r.pp.ann ? 'Y' : 'Q'; });
+  }
+  recs.forEach(r => {
+    if (!r.pp) return;
+    const V = views[r.g];
+    if (!segOrder.includes(r.seg)) segOrder.push(r.seg);
+    if (!V.values[r.seg]) V.values[r.seg] = {};
+    if (!V._k) V._k = new Map();
+    if (!V._k.has(r.pp.key)) V._k.set(r.pp.key, r.pp);
+    const v = V.values[r.seg][r.pp.key] || (V.values[r.seg][r.pp.key] = { sales: null, op: null });
+    if (r.sales != null) v.sales = r.sales;
+    if (r.op != null) v.op = r.op;
+  });
+  ['Q', 'Y'].forEach(g => { const V = views[g]; V.periods = V._k ? [...V._k.values()].sort((a, b) => a.key - b.key) : []; delete V._k; });
+  // 売上だけ／利益だけのセグメントを知らせる
+  ['Q', 'Y'].forEach(g => Object.entries(views[g].values).forEach(([seg, ps]) => {
+    const vs = Object.values(ps);
+    if (vs.length && vs.every(v => v.op == null)) notes.push(`${g === 'Q' ? '四半期' : '年度'}の「${seg}」は利益のデータがありません`);
+    if (vs.length && vs.every(v => v.sales == null)) notes.push(`${g === 'Q' ? '四半期' : '年度'}の「${seg}」は売上のデータがありません`);
+  }));
+
+  // セグメント（segments シートの順 → data の登場順）
+  const segs = [], used = new Set();
+  segMeta.forEach(m => {
+    if (!segOrder.includes(m.name)) { notes.push(`segments の「${m.name}」に対応するデータがありません`); return; }
+    if (used.has(m.name)) return;
+    used.add(m.name); segs.push(m);
+  });
+  segOrder.forEach(n => { if (!used.has(n)) segs.push({ name: n, label: n, subtitle: '', sheetColor: null, salesColor: null, opColor: null, marginColor: null, visible: true }); });
+  const pal = PALETTES[paletteName] || PALETTES['クラシック'];
+  segs.forEach((s, i) => { s.defaultColor = s.sheetColor || pal[i % pal.length]; s.color = s.defaultColor; s.sheetSales = s.salesColor; s.sheetOp = s.opColor; });
+
+  return { segs, views, periods: [], values: {}, cfg, notes, segTable, found, gran: 'Q' };
+}
+
+/* =========================================================
+   状態
+   ========================================================= */
+const O = {
+  title: '', company: '', note: '', unit: '', cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null, legend: 'top', showMargin: true, showLast: true, showLastBar: false,
+  marginColor: '#c0151f', height: 560, ratio: 'fit', rw: 16, rh: 9, pw: 1280, ph: 720, yMax: null, rMax: null, nQ: 20, endIdx: null, fillGaps: true,
+};
+let M = null, SOURCE = '';
+const LS_KEY = 'segchart.v1';
+const store = {
+  load() { try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { return {}; } },
+  save(patch) { try { localStorage.setItem(LS_KEY, JSON.stringify(Object.assign(store.load(), patch))); } catch (e) {} },
+};
+
+/* ---------- 通貨・単位 ---------- */
+const CURRENCIES = [
+  ['JPY','円'],['USD','ドル'],['EUR','ユーロ'],['CNY','人民元'],['TWD','台湾ドル'],['HKD','香港ドル'],['KRW','ウォン'],
+  ['DKK','デンマーククローネ'],['SEK','スウェーデンクローナ'],['NOK','ノルウェークローネ'],['CHF','スイスフラン'],['GBP','ポンド'],
+  ['SGD','シンガポールドル'],['AUD','豪ドル'],['CAD','カナダドル'],['INR','インドルピー'],['custom','その他（自由入力）'],
+];
+const CUR_ALIAS = { '米ドル':'USD','$':'USD','＄':'USD','usドル':'USD','元':'CNY','人民幣':'CNY','rmb':'CNY','€':'EUR','¥':'JPY','￥':'JPY','日本円':'JPY','₩':'KRW','韓国ウォン':'KRW','ニュー台湾ドル':'TWD','ntd':'TWD','nt$':'TWD','hk$':'HKD','英ポンド':'GBP','£':'GBP','豪州ドル':'AUD','オーストラリアドル':'AUD','ルピー':'INR' };
+const UNIT_LABEL = { 1: '', 1e3: '千', 1e6: '百万', 1e8: '億', 1e9: '十億', 1e12: '兆' };
+const UNIT_ALIAS = { '': 1, 'そのまま': 1, '1': 1, '千': 1e3, 'thousand': 1e3, 'thousands': 1e3, 'k': 1e3, '百万': 1e6, 'million': 1e6, 'millions': 1e6, 'mn': 1e6, 'm': 1e6, '億': 1e8, '十億': 1e9, 'billion': 1e9, 'bn': 1e9, 'b': 1e9, '兆': 1e12, 'trillion': 1e12 };
+const curLabel = code => code === 'custom' ? (O.curCustom || '') : ((CURRENCIES.find(c => c[0] === code) || [, code])[1]);
+const dispCurCode = () => O.dispCur === 'same' ? O.cur : O.dispCur;
+function parseCur(v) {
+  const t = half(v).trim(), k = t.toLowerCase().replace(/\s/g, '');
+  if (!t) return null;
+  const byCode = CURRENCIES.find(c => c[0].toLowerCase() === k);
+  if (byCode) return { code: byCode[0] };
+  const byLabel = CURRENCIES.find(c => c[1] === t);
+  if (byLabel) return { code: byLabel[0] };
+  if (CUR_ALIAS[k] || CUR_ALIAS[t]) return { code: CUR_ALIAS[k] || CUR_ALIAS[t] };
+  return { code: 'custom', label: t };
+}
+function parseUnit(v) { const k = half(v).trim().toLowerCase().replace(/\s/g, ''); return UNIT_ALIAS[k] ?? null; }
+function fxRate() { return dispCurCode() !== O.cur ? (O.fx > 0 ? O.fx : null) : 1; }
+function maxRaw() {
+  let m = 0;
+  if (M) [M.views.Q.values, M.views.Y.values].forEach(vs => Object.values(vs).forEach(ps => Object.values(ps).forEach(v => { [v.sales, v.op].forEach(x => { if (x != null) m = Math.max(m, Math.abs(x)); }); })));
+  return m;
+}
+function dispUnitValue() {
+  if (O.dispUnit !== 'auto') return +O.dispUnit;
+  const base = maxRaw() * O.dataUnit * (fxRate() || 1);
+  return [1e12, 1e8, 1e6].find(u => base / u >= 10) || 1e6;
+}
+const scaleK = () => O.dataUnit * (fxRate() || 1) / dispUnitValue();
+const effCur = () => fxRate() ? dispCurCode() : O.cur;
+const unitText = () => (UNIT_LABEL[dispUnitValue()] ?? '') + curLabel(effCur());
+function fmtV(x) {
+  if (x == null) return '–';
+  const a = Math.abs(x);
+  return x.toLocaleString('ja-JP', { maximumFractionDigits: a >= 100 ? 0 : a >= 10 ? 1 : a >= 1 ? 2 : 3 });
+}
+
+function applyConfig(cfg) {
+  const g = (...ks) => { for (const k of ks) { const v = cfg[normH(k)]; if (v != null && v !== '') return v; } return null; };
+  let v;
+  if ((v = g('タイトル','title')) != null) O.title = v;
+  if ((v = g('企業名','会社名','社名','company')) != null) O.company = v;
+  if ((v = g('注記','出所','出典','脚注','note','source')) != null) O.note = v;
+  if ((v = g('通貨','データの通貨','currency')) != null) { const c = parseCur(v); if (c) { O.cur = c.code; if (c.label) O.curCustom = c.label; } }
+  if ((v = g('データの単位','元データの単位','データ単位','元データ単位','入力単位','dataunit')) != null && parseUnit(v) != null) O.dataUnit = parseUnit(v);
+  if ((v = g('表示単位','表示の単位','displayunit')) != null) { if (/自動|auto/i.test(v)) O.dispUnit = 'auto'; else if (parseUnit(v) != null) O.dispUnit = String(parseUnit(v)); }
+  if ((v = g('表示通貨','表示の通貨','displaycurrency')) != null) { const c = parseCur(v); if (c && c.code !== 'custom') O.dispCur = c.code; }
+  if ((v = g('換算レート','為替レート','レート','fx','rate')) != null && num(v) > 0) O.fx = num(v);
+  // 旧形式「単位: 億円」= データはその単位・通貨で入力済み
+  if ((v = g('単位','unit')) != null && g('通貨','currency') == null) {
+    const m = half(v).trim().match(/^(百万|十億|億|兆|千)?(.*)$/);
+    if (m) { const c = parseCur(m[2] || '円'); if (c) { O.cur = c.code; if (c.label) O.curCustom = c.label; } if (m[1]) { O.dataUnit = UNIT_ALIAS[m[1]]; if (g('表示単位','表示の単位') == null) O.dispUnit = String(UNIT_ALIAS[m[1]]); } }
+  }
+  if ((v = g('利益率線の色','利益率の線の色','利益率の色','線の色','margincolor')) != null && normColor(v)) O.marginColor = normColor(v);
+  if ((v = g('左軸最大','左軸の最大値','ymax')) != null) O.yMax = num(v) || null;
+  if ((v = g('右軸最大','右軸の最大値','rmax')) != null) {
+    let x = num(String(v).replace('%', ''));
+    if (x != null && x <= 1.5 && !String(v).includes('%')) x *= 100;
+    O.rMax = x || null;
+  }
+  if ((v = g('表示四半期数','四半期数','nq','quarters')) != null && num(v)) { O.nByG = O.nByG || {}; O.nByG.Q = num(v); }
+  if ((v = g('表示年数','年数','表示年度数','years')) != null && num(v)) { O.nByG = O.nByG || {}; O.nByG.Y = num(v); }
+  if ((v = g('抜けた期を空ける','抜けている期を空ける','欠損期','fillgaps')) != null) O.fillGaps = !/^(false|0|off|no|しない|なし|いいえ)$/i.test(v);
+  if ((v = g('表示区分','区分','初期表示','期間','granularity')) != null) O.granPref = /年|通期|annual|year|y$/i.test(v) ? 'Y' : 'Q';
+  if ((v = g('凡例','legend')) != null) O.legend = /下|bottom/i.test(v) ? 'bottom' : /なし|非表示|none|off|false/i.test(v) ? 'none' : 'top';
+  if ((v = g('高さ','height')) != null && num(v)) { O.height = clamp(num(v), 240, 3000); O.ph = O.height; }
+  if ((v = g('縦横比','比率','aspect','ratio')) != null) {
+    const m = half(v).match(/([\d.]+)\s*[:x×\/]\s*([\d.]+)/i);
+    if (m) { const r = `${+m[1]}:${+m[2]}`; if ([...document.querySelectorAll('#oRatio option')].some(o => o.value === r)) O.ratio = r; else { O.ratio = 'custom'; O.rw = +m[1]; O.rh = +m[2]; } }
+    else if (/画面|自動|fit|auto/i.test(v)) O.ratio = 'fit';
+  }
+  if ((v = g('幅','width')) != null && num(v)) { O.ratio = 'px'; O.pw = clamp(num(v), 360, 4000); O.ph = O.ph || O.height; }
+  if ((v = g('営業利益率','利益率','利益率の線','showmargin')) != null) O.showMargin = !/^(false|0|off|no|なし|非表示)$/i.test(v);
+  if ((v = g('最新の利益率','最新値','showlast')) != null) O.showLast = !/^(false|0|off|no|なし|非表示)$/i.test(v);
+}
+
+function ingest(tables, source) {
+  const pre = tables.map(t => classify(t.rows || [])).filter(Boolean);
+  const cfg0 = {};
+  pre.filter(c => c.type === 'config').forEach(c => { const ki = findCol(c.header,'key'), vi = findCol(c.header,'value'); c.body.forEach(({r}) => cfg0[normH(r[ki])] = String(r[vi] ?? '').trim()); });
+  const palName = cfg0[normH('パレット')] || cfg0['palette'];
+  const model = buildModel(tables, palName);
+  if (model.error) { setStatus(model.error, true); return false; }
+  M = model; SOURCE = source;
+  O.title = ''; O.company = ''; O.note = ''; O.yMax = null; O.rMax = null;
+  Object.assign(O, { cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null });
+  O.nByG = {}; O.granPref = null; O.fillGaps = true;
+  applyConfig(M.cfg);
+  const hasQ = M.views.Q.periods.length > 0, hasY = M.views.Y.periods.length > 0;
+  setGran(O.granPref === 'Y' && hasY ? 'Y' : O.granPref === 'Q' && hasQ ? 'Q' : hasQ ? 'Q' : 'Y', true);
+  renderSegList();
+  const span = g => { const ps = M.views[g].periods; if (!ps.length) return ''; return `${ps.length}${g === 'Q' ? '四半期' : '年度'}（${esc(plab(ps[0]))} 〜 ${esc(plab(ps[ps.length - 1]))}）`; };
+  setStatus(`<b>${M.segs.length}セグメント</b> を読み込みました<br>` + [span('Q'), span('Y')].filter(Boolean).join('・') +
+    (M.notes.length ? `<br><span style="color:#b45309">⚠ ${M.notes.map(esc).join('<br>⚠ ')}</span>` : ''));
+  render();
+  return true;
+}
+
+/* 四半期 / 年度 の切り替え */
+function setGran(g, silent) {
+  if (!M || !M.views[g] || !M.views[g].periods.length) return;
+  M.gran = g; M.periods = O.fillGaps ? fillGaps(M.views[g].periods, g) : M.views[g].periods; M.values = M.views[g].values;
+  const L = M.periods.length;
+  O.endIdx = L - 1;
+  O.nQ = clamp(Math.round((O.nByG && O.nByG[g]) || 30), Math.min(3, L), L);
+  syncControls();
+  if (!silent) render();
+}
+function fillGaps(ps, g) {
+  if (ps.length < 2 || ps.some(p => !p.year)) return ps;
+  const have = new Map(ps.map(p => [p.key, p])), p0 = ps[0], out = [];
+  const next = k => g === 'Y' ? k + 10 : (k % 10 < 4 ? k + 1 : (Math.floor(k / 10) + 1) * 10 + 1);
+  for (let k = p0.key, guard = 0; k <= ps[ps.length - 1].key && guard < 2000; k = next(k), guard++) {
+    if (have.has(k)) { out.push(have.get(k)); continue; }
+    const y = Math.floor(k / 10), q = k % 10;
+    out.push(g === 'Y'
+      ? { key: k, year: y, ylab: null, q: null, qlab: String(p0.qlab).replace(String(p0.year), String(y)), ann: true, gap: true }
+      : { key: k, year: y, ylab: p0.ylab ? String(p0.ylab).replace(String(p0.year), String(y)) : String(y), q, qlab: q + 'Q', gap: true });
+  }
+  return out;
+}
+const granWord = () => (M && M.gran === 'Y') ? '年度' : '四半期';
+
+/* =========================================================
+   軸のスケール
+   ========================================================= */
+const NICE = [1, 2, 2.5, 5, 10];
+function niceUp(x) {
+  if (!(x > 0)) return 1;
+  const e = Math.pow(10, Math.floor(Math.log10(x))), f = x / e;
+  return NICE.find(v => f <= v + 1e-9) * e;
+}
+const isNice = x => { const e = Math.pow(10, Math.floor(Math.log10(x))), f = x / e; return NICE.some(v => Math.abs(f - v) < 1e-6); };
+
+function axes(lmax, lmin, rmax, rmin, showM) {
+  const fL = O.yMax > 0 ? O.yMax : null, fR = O.rMax > 0 ? O.rMax / 100 : null;
+  lmax = lmax || 1; rmax = Math.max(rmax, 0.01);
+  let best = null;
+  for (let k = 3; k <= 7; k++) {
+    const ls = fL ? fL / k : niceUp(lmax / k);
+    const rs = fR ? fR / k : niceUp(rmax / k);
+    if ((fL && !isNice(ls)) || (fR && showM && !isNice(rs))) continue;
+    const waste = (ls * k) / lmax + (showM ? (rs * k) / rmax : 1) + (k === 5 ? -0.02 : 0);
+    if (!best || waste < best.waste) best = { k, ls, rs, waste };
+  }
+  if (!best) { const k = 5; best = { k, ls: fL ? fL / k : niceUp(lmax / k), rs: fR ? fR / k : niceUp(rmax / k) }; }
+  const { k, ls, rs } = best;
+  let kn = Math.max(0, Math.ceil(-lmin / ls - 1e-9));
+  if (showM && rmin < 0) kn = Math.max(kn, Math.ceil(Math.min(-rmin, rs * k) / rs - 1e-9));
+  return { kp: k, kn, ls, rs };
+}
+
+/* =========================================================
+   描画（SVG）
+   ========================================================= */
+function visiblePeriods() {
+  if (!M) return [];
+  const end = clamp(O.endIdx ?? M.periods.length - 1, 0, M.periods.length - 1);
+  const n = clamp(O.nQ, 1, end + 1);
+  return M.periods.slice(end - n + 1, end + 1);
+}
+const margin = v => (v && v.sales > 0 && v.op != null) ? v.op / v.sales : null;
+const fmtN = (v, step) => { const d = Math.max(0, Math.min(4, Math.ceil(-Math.log10(step) - 1e-9) + (/[^0]5$|25$/.test(String(+(step / Math.pow(10, Math.floor(Math.log10(step)))).toFixed(3))) ? 1 : 0))); return v.toLocaleString('ja-JP', { minimumFractionDigits: 0, maximumFractionDigits: d }); };
+const fmtP = (v, step) => (v * 100).toFixed(step * 100 < 1 ? 1 : 0) + '%';
+const plab = p => p.ylab ? `${p.ylab} ${p.qlab}` : p.qlab;
+
+function ratioOf() {
+  if (O.ratio === 'custom') return [Math.max(0.1, +O.rw || 16), Math.max(0.1, +O.rh || 9)];
+  return O.ratio.split(':').map(Number);
+}
+function chartSize(host) {
+  const cw = Math.max(360, Math.floor(host.clientWidth || 900));
+  if (O.ratio === 'px') return [clamp(Math.round(O.pw) || 1280, 360, 4000), clamp(Math.round(O.ph) || 720, 240, 3000)];
+  if (O.ratio === 'fit') return [cw, clamp(O.height, 240, 3000)];
+  const [rw, rh] = ratioOf();
+  const maxH = Math.max(420, window.innerHeight - 140);
+  let W = cw, H = W * rh / rw;
+  if (H > maxH) { H = maxH; W = H * rw / rh; }
+  if (W < 360) { W = 360; H = W * rh / rw; }
+  return [Math.round(W), Math.round(Math.max(240, H))];
+}
+function ratioLabel(w, h) {
+  const presets = [[16,9],[4,3],[3,2],[21,9],[1,1],[4,5],[9,16],[3,4],[2,1]];
+  const hit = presets.find(([a, b]) => Math.abs(w / h - a / b) / (a / b) < 0.012);
+  return hit ? `${hit[0]}:${hit[1]}` : `${(w / h).toFixed(2)}:1`;
+}
+function titleText() {
+  const co = String(O.company || '').trim();
+  let t = String(O.title || '').trim();
+  if (!t) t = co ? '{企業名}　セグメント別業績推移（{区分}）' : '';
+  return t.replace(/\{(企業名|会社名|company)\}/gi, co).replace(/\{(単位|unit)\}/gi, M ? unitText() : '').replace(/\{(通貨|currency)\}/gi, curLabel(effCur())).replace(/\{(区分|期間)\}/g, granWord()).trim();
+}
+let LAST = null; // ホバー用
+function render() {
+  const host = $('#chart');
+  if (!M) return;
+  $('#tip').style.opacity = 0;
+  const segs = M.segs.filter(s => s.visible);
+  const per = visiblePeriods();
+  $('#footL').textContent = M ? `${segs.length}セグメント・${per.length}${granWord()}を表示中` : '';
+  if (!segs.length || !per.length) { host.innerHTML = '<div class="empty">表示するセグメントを選んでください</div>'; return; }
+
+  const [Wpx, Hpx] = chartSize(host);
+  // 文字・余白をサイズに比例させる（基準 1000×540）
+  const F = clamp(Math.sqrt(Wpx * Hpx / (1000 * 540)), 0.62, 1.7);
+  const W = Wpx / F, HH = Hpx / F;
+  const showM = O.showMargin;
+  const n = segs.length, m = per.length;
+  const K = scaleK();
+  const get = (s, p) => { const v = (M.values[s.name] || {})[p.key]; return v ? { sales: v.sales == null ? null : v.sales * K, op: v.op == null ? null : v.op * K } : null; };
+
+  let lmax = 0, lmin = 0, rmax = 0, rmin = 0;
+  segs.forEach(s => per.forEach(p => {
+    const v = get(s, p); if (!v) return;
+    [v.sales, v.op].forEach(x => { if (x != null) { lmax = Math.max(lmax, x); lmin = Math.min(lmin, x); } });
+    const g = margin(v); if (g != null) { rmax = Math.max(rmax, g); rmin = Math.min(rmin, g); }
+  }));
+  const ax = axes(lmax, lmin, rmax, rmin, showM);
+  const lTop = ax.kp * ax.ls, lBot = -ax.kn * ax.ls, rTop = ax.kp * ax.rs, rBot = -ax.kn * ax.rs;
+  const mc = O.marginColor;
+
+  // ---- 凡例
+  const legItems = [{ k: 'sales', t: '売上' }, { k: 'op', t: '営業利益' }];
+  if (showM) legItems.push({ k: 'margin', t: '営業利益率（右軸）' });
+  const LFS = 12, swW = 18, legGap = 20;
+  const legW = legItems.reduce((a, it) => a + swW + 6 + tw(it.t, LFS, 500), 0) + legGap * (legItems.length - 1);
+
+  // ---- レイアウト
+  const title = titleText();
+  const TFS = 22;
+  const padL = 70, padR = showM ? 62 : 22;
+  let y = 6, legendPos = null;
+  if (title) y += 34;
+  if (O.legend === 'top') {
+    if (title && 16 + tw(title, TFS, 700) + 40 + legW <= W - 12) legendPos = { x: W - padR - legW, y: 6 + 21, inline: true };
+    else { legendPos = { x: W - padR - legW, y: y + 14 }; y += 26; }
+  }
+  const hasSub = segs.some(s => s.subtitle);
+  const headTop = y + 8;
+  const headH = hasSub ? 50 : 30;
+  const plotTop = headTop + headH + 10;
+  const hasYears = per.some(p => p.ylab);
+  const xLabH = 18, yearH = hasYears ? 22 : 0, legB = O.legend === 'bottom' ? 34 : 0;
+  const fxNote = (fxRate() && dispCurCode() !== O.cur) ? `換算レート：1 ${curLabel(O.cur)} = ${O.fx} ${curLabel(dispCurCode())}` : '';
+  const note = String(O.note || '').trim();
+  const noteH = (fxNote || note) ? 16 : 0;
+  const plotBot = Math.max(plotTop + 120, HH - (xLabH + yearH + legB + noteH + 6));
+  const plotH = plotBot - plotTop;
+  if (O.legend === 'bottom') legendPos = { x: (W - legW) / 2, y: HH - 14 - noteH };
+  const gap = n <= 2 ? 34 : n <= 4 ? 22 : 16;
+  const pw = (W - padL - padR - gap * (n - 1)) / n;
+  const band = pw / m, barW = Math.max(1, band * (m > 24 ? 0.82 : 0.76));
+  const yL = v => plotTop + (lTop - v) / (lTop - lBot) * plotH;
+  const yR = v => plotTop + (rTop - v) / (rTop - rBot) * plotH;
+
+  const o = [];
+  o.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${Wpx}" height="${Hpx}" viewBox="0 0 ${W.toFixed(2)} ${HH.toFixed(2)}" font-family="${esc(FONT)}" style="font-family:${esc(FONT)}">`);
+  o.push(`<rect width="${W}" height="${HH}" fill="#ffffff"/>`);
+  o.push('<defs>');
+  segs.forEach((s, k) => { const px = padL + k * (pw + gap); o.push(`<clipPath id="cp${k}"><rect x="${px - 3}" y="${plotTop - 1}" width="${pw + 6}" height="${plotH + 2}"/></clipPath>`); });
+  o.push('</defs>');
+
+  if (note) o.push(`<text x="16" y="${HH - 6}" font-size="10" fill="#9ca3af">${esc(note)}</text>`);
+  if (fxNote) o.push(`<text x="${W - 12}" y="${HH - 6}" font-size="10" fill="#9ca3af" text-anchor="end">${esc(fxNote)}</text>`);
+  if (title) o.push(`<text x="16" y="${6 + 24}" font-size="${TFS}" font-weight="700" fill="#111827">${esc(title)}</text>`);
+
+  // 凡例（色の帯 = セグメント色、濃淡 = 指標）
+  if (legendPos) {
+    let lx = legendPos.x; const ly = legendPos.y;
+    legItems.forEach(it => {
+      if (it.k === 'margin') {
+        o.push(`<line x1="${lx}" y1="${ly - 4}" x2="${lx + swW}" y2="${ly - 4}" stroke="${mc}" stroke-width="2.4" stroke-linecap="round"/>`);
+        o.push(`<circle cx="${lx + swW / 2}" cy="${ly - 4}" r="3" fill="#fff" stroke="${mc}" stroke-width="2"/>`);
+      } else {
+        const sw = swW / n;
+        segs.forEach((s, i) => {
+          const c = it.k === 'sales' ? (s.salesColor || tint(s.color)) : (s.opColor || s.color);
+          o.push(`<rect x="${(lx + i * sw).toFixed(2)}" y="${ly - 10}" width="${(sw + 0.3).toFixed(2)}" height="12" fill="${c}"/>`);
+        });
+      }
+      o.push(`<text x="${lx + swW + 6}" y="${ly}" font-size="${LFS}" font-weight="500" fill="#374151">${esc(it.t)}</text>`);
+      lx += swW + 6 + tw(it.t, LFS, 500) + legGap;
+    });
+  }
+
+  // 左軸
+  for (let i = -ax.kn; i <= ax.kp; i++) {
+    const v = i * ax.ls + 0;
+    o.push(`<text x="${padL - 10}" y="${yL(v) + 4}" font-size="11" fill="#6b7280" text-anchor="end">${fmtN(v, ax.ls)}</text>`);
+  }
+  const ut = unitText();
+  const lt = `売上・営業利益${ut ? `（${ut}）` : ''}`;
+  o.push(`<text transform="translate(16 ${plotTop + plotH / 2}) rotate(-90)" font-size="11" fill="#6b7280" text-anchor="middle">${esc(lt)}</text>`);
+  // 右軸
+  if (showM) {
+    const rc = mix(mc, '#6b7280', 0.25);
+    for (let i = -ax.kn; i <= ax.kp; i++) {
+      const v = i * ax.rs + 0;
+      o.push(`<text x="${W - padR + 10}" y="${yR(v) + 4}" font-size="11" fill="${rc}">${fmtP(v, ax.rs)}</text>`);
+    }
+    o.push(`<text transform="translate(${W - 10} ${plotTop + plotH / 2}) rotate(90)" font-size="11" fill="${rc}" text-anchor="middle">営業利益率</text>`);
+  }
+
+  // パネル
+  segs.forEach((s, k) => {
+    const px = padL + k * (pw + gap);
+    const base = s.color, cS = s.salesColor || tint(base), cO = s.opColor || base;
+    const head = shade(base, lum(base) > 0.62 ? 0.35 : 0.1);
+    // 見出し
+    const fit = (txt, max, min, wt) => {
+      const room = pw + gap * 0.6 - 4;
+      let fs = Math.max(min, Math.min(max, max * room / Math.max(1, tw(txt, max, wt))));
+      let t = txt;
+      while (t.length > 1 && tw(t, fs, wt) > room) t = t.slice(0, -1);
+      return [fs, t === txt ? t : t.slice(0, -1) + '…'];
+    };
+    const [nmFs, nmT] = fit(s.label, 17, 8, 700);
+    o.push(`<text x="${px + pw / 2}" y="${headTop + 18}" font-size="${nmFs.toFixed(1)}" font-weight="700" fill="${head}" text-anchor="middle"><title>${esc(s.label)}</title>${esc(nmT)}</text>`);
+    if (s.subtitle) {
+      const [sbFs, sbT] = fit(s.subtitle, 12.5, 7.5, 500);
+      o.push(`<text x="${px + pw / 2}" y="${headTop + 38}" font-size="${sbFs.toFixed(1)}" font-weight="500" fill="${head}" fill-opacity=".72" text-anchor="middle">${esc(sbT)}</text>`);
+    }
+    o.push(`<line x1="${px + pw * 0.3}" x2="${px + pw * 0.7}" y1="${headTop + headH}" y2="${headTop + headH}" stroke="${base}" stroke-width="2" stroke-linecap="round" opacity=".9"/>`);
+    // グリッド
+    for (let i = -ax.kn; i <= ax.kp; i++) {
+      const yy = yL(i * ax.ls).toFixed(1);
+      o.push(`<line x1="${px}" x2="${px + pw}" y1="${yy}" y2="${yy}" stroke="${i === 0 ? '#9ca3af' : '#eceef1'}" stroke-width="1"/>`);
+    }
+    o.push(`<rect class="hl" data-k="${k}" x="0" y="${plotTop}" width="${band}" height="${plotH}" fill="#111827" opacity="0"/>`);
+    // 棒
+    o.push(`<g clip-path="url(#cp${k})">`);
+    const rx = barW > 8 ? 1.5 : 0;
+    per.forEach((p, i) => {
+      const v = get(s, p); if (!v) return;
+      const x = px + i * band + (band - barW) / 2;
+      const bar = (val, fill) => {
+        if (val == null) return;
+        const y1 = yL(Math.max(val, 0)), y2 = yL(Math.min(val, 0));
+        o.push(`<rect x="${x.toFixed(2)}" y="${y1.toFixed(2)}" width="${barW.toFixed(2)}" height="${Math.max(0, y2 - y1).toFixed(2)}" rx="${rx}" fill="${fill}"/>`);
+      };
+      bar(v.sales, cS); bar(v.op, cO);
+    });
+    o.push('</g>');
+    // 最新の売上・営業利益ラベル
+    if (O.showLastBar) {
+      let li = -1; per.forEach((p, i) => { if (get(s, p)) li = i; });
+      if (li >= 0) {
+        const v = get(s, per[li]), cx = px + li * band + band / 2;
+        if (v.sales != null) o.push(`<text x="${cx}" y="${yL(Math.max(v.sales, 0)) - 5}" font-size="10.5" font-weight="700" fill="${shade(cS, 0.45)}" text-anchor="${band < 30 ? 'end' : 'middle'}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtV(v.sales)}</text>`);
+        if (v.op != null && v.op > 0) o.push(`<text x="${cx}" y="${yL(v.op) + 13}" font-size="10.5" font-weight="700" fill="${lum(cO) > 0.6 ? '#111827' : '#fff'}" text-anchor="${band < 30 ? 'end' : 'middle'}">${fmtV(v.op)}</text>`);
+      }
+    }
+    // 利益率の線
+    if (showM) {
+      const lc = s.marginColor || mc;
+      let d = '', dg = '', last = null, prevI = -9, prev = null;
+      const pts = [];
+      per.forEach((p, i) => {
+        const g = margin(get(s, p));
+        if (g == null) return;
+        const cx = px + i * band + band / 2, cy = yR(g), xy = cx.toFixed(2) + ' ' + cy.toFixed(2);
+        if (prev && i === prevI + 1) d += 'L' + xy;
+        else { d += 'M' + xy; if (prev) dg += `M${prev.cx.toFixed(2)} ${prev.cy.toFixed(2)}L${xy}`; }
+        pts.push({ cx, cy, i });
+        prevI = i; prev = { cx, cy }; last = { cx, cy, g };
+      });
+      const lone = pts.filter((pt, j) => !(pts[j - 1] && pts[j - 1].i === pt.i - 1) && !(pts[j + 1] && pts[j + 1].i === pt.i + 1));
+      o.push(`<g clip-path="url(#cp${k})">` +
+        (dg ? `<path d="${dg}" fill="none" stroke="${lc}" stroke-width="1.4" stroke-dasharray="3 3" opacity=".75"/>` : '') +
+        `<path d="${d}" fill="none" stroke="#ffffff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" opacity=".7"/><path d="${d}" fill="none" stroke="${lc}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>` +
+        lone.map(pt => `<circle cx="${pt.cx.toFixed(2)}" cy="${pt.cy.toFixed(2)}" r="2.6" fill="${lc}"/>`).join('') + '</g>');
+      if (last && O.showLast) {
+        o.push(`<circle cx="${last.cx}" cy="${last.cy}" r="3.6" fill="#fff" stroke="${lc}" stroke-width="2"/>`);
+        const txt = (last.g * 100).toFixed(1) + '%';
+        const anchor = last.cx + tw(txt, 11.5, 700) / 2 > px + pw + gap / 2 ? 'end' : 'middle';
+        const ty = last.cy - 9 < plotTop + 10 ? last.cy + 18 : last.cy - 9;
+        o.push(`<text x="${anchor === 'end' ? last.cx + 4 : last.cx}" y="${ty}" font-size="11.5" font-weight="700" fill="${lc}" text-anchor="${anchor}" stroke="#fff" stroke-width="3.5" stroke-linejoin="round" paint-order="stroke">${txt}</text>`);
+      }
+    }
+    // X軸：四半期
+    const qy = plotBot + 13;
+    let stride = 1;
+    if (per.some(p => p.q)) {
+      const need = tw('4Q', 10.5) + 4;
+      const qShow = band >= need ? () => true : band * 2 >= need ? p => p.q % 2 === 1 : band * 4 >= need ? p => p.q === 1 : () => false;
+      per.forEach((p, i) => { if (qShow(p)) o.push(`<text x="${(px + i * band + band / 2).toFixed(1)}" y="${qy}" font-size="10.5" fill="#6b7280" text-anchor="middle">${p.qlab}</text>`); });
+    } else {
+      const wMax = Math.max(...per.map(p => tw(p.qlab, 10))) + 6;
+      stride = Math.max(1, Math.ceil(wMax / band));
+      per.forEach((p, i) => { if ((per.length - 1 - i) % stride === 0) o.push(`<text x="${(px + i * band + band / 2).toFixed(1)}" y="${qy}" font-size="10" fill="#6b7280" text-anchor="middle">${esc(p.qlab)}</text>`); });
+    }
+    // X軸：年
+    if (hasYears) {
+      const groups = [];
+      per.forEach((p, i) => { const g = groups[groups.length - 1]; if (g && g.lab === p.ylab) g.e = i; else groups.push({ lab: p.ylab, s: i, e: i }); });
+      const yy = plotBot + xLabH + 13;
+      const yrW = groups.map(g => (g.e - g.s + 1) * band);
+      const useShort = groups.some((g, gi) => tw(g.lab, 11, 500) > yrW[gi] - 2 && gi > 0 && gi < groups.length - 1);
+      let lastR = -1e9;
+      groups.forEach((g, gi) => {
+        const x0 = px + g.s * band, x1 = px + (g.e + 1) * band, wdt = x1 - x0;
+        if (gi > 0 && band >= 2) o.push(`<line x1="${x0.toFixed(1)}" x2="${x0.toFixed(1)}" y1="${plotBot + 3}" y2="${plotBot + xLabH + yearH - 2}" stroke="#d6dae0"/>`);
+        let lab = useShort || tw(g.lab, 11, 500) > wdt - 2 ? "'" + String(g.lab).replace(/\D/g, '').slice(2, 4) : g.lab;
+        const lw = tw(lab, 11, 500), cx = Math.min(Math.max((x0 + x1) / 2, px + lw / 2), px + pw - lw / 2);
+        if (cx - lw / 2 < lastR + 4) return;
+        lastR = cx + lw / 2;
+        o.push(`<text x="${cx.toFixed(1)}" y="${yy}" font-size="11" font-weight="500" fill="#4b5563" text-anchor="middle">${esc(lab)}</text>`);
+      });
+    }
+    // ホバー領域
+    per.forEach((p, i) => o.push(`<rect class="hov" data-k="${k}" data-i="${i}" x="${(px + i * band).toFixed(2)}" y="${plotTop}" width="${band.toFixed(2)}" height="${plotH + xLabH}" fill="transparent"/>`));
+  });
+  o.push('</svg>');
+  host.innerHTML = `<div class="svgwrap">${o.join('')}<div class="rz" title="ドラッグでサイズ変更（Shiftで比率固定）"></div><div class="rzlab"></div></div>`;
+  LAST = { segs, per, band, padL, pw, gap, get };
+}
+
+/* ツールチップ */
+function bindHover() {
+  const host = $('#chart'), tip = $('#tip');
+  host.addEventListener('mousemove', e => {
+    const t = e.target.closest && e.target.closest('.hov');
+    host.querySelectorAll('.hl').forEach(h => h.setAttribute('opacity', 0));
+    if (!t || !LAST) { tip.style.opacity = 0; return; }
+    const k = +t.dataset.k, i = +t.dataset.i, s = LAST.segs[k], p = LAST.per[i], v = LAST.get(s, p);
+    const hl = host.querySelector(`.hl[data-k="${k}"]`);
+    if (hl) { hl.setAttribute('x', t.getAttribute('x')); hl.setAttribute('opacity', 0.05); }
+    const pi = M.periods.indexOf(p);
+    let prev = null;
+    if (p.q || p.ann) { const pp = M.periods.find(x => x.key === p.key - 10); prev = pp ? LAST.get(s, pp) : null; }
+    const yoy = (a, b) => (a != null && b != null && b !== 0) ? ((a / b - 1) * 100 >= 0 ? '+' : '') + ((a / b - 1) * 100).toFixed(1) + '%' : '';
+    const f = fmtV;
+    const g = margin(v);
+    tip.innerHTML = `<div class="h"><i style="background:${s.color}"></i>${esc(s.label)}</div><div class="p">${esc(plab(p))}　<span style="opacity:.7">単位: ${esc(unitText())}</span>${prev ? `　<span style="opacity:.7">${p.ann ? '前年比' : '前年同期比'}</span>` : ''}</div>
+      <table><tr><td>売上</td><td>${f(v && v.sales)}</td><td>${prev ? yoy(v && v.sales, prev.sales) : ''}</td></tr>
+      <tr><td>営業利益</td><td>${f(v && v.op)}</td><td>${prev ? yoy(v && v.op, prev.op) : ''}</td></tr>
+      <tr><td>営業利益率</td><td>${g == null ? '–' : (g * 100).toFixed(1) + '%'}</td><td>${prev && g != null && margin(prev) != null ? ((g - margin(prev)) * 100 >= 0 ? '+' : '') + ((g - margin(prev)) * 100).toFixed(1) + 'pt' : ''}</td></tr></table>`;
+    const r = tip.getBoundingClientRect();
+    let x = e.clientX + 16, y = e.clientY + 14;
+    if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 16;
+    if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 14;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px'; tip.style.opacity = 1;
+  });
+  host.addEventListener('mouseleave', () => { tip.style.opacity = 0; host.querySelectorAll('.hl').forEach(h => h.setAttribute('opacity', 0)); });
+}
+
+/* =========================================================
+   UI
+   ========================================================= */
+let rq = 0;
+const scheduleRender = () => { cancelAnimationFrame(rq); rq = requestAnimationFrame(render); };
+function setStatus(html, err) { const el = $('#status'); el.innerHTML = html; el.classList.toggle('err', !!err); }
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2200); }
+
+function syncControls() {
+  $('#oGaps').checked = O.fillGaps;
+  $('#oTitle').value = O.title; $('#oCompany').value = O.company || ''; $('#oNote').value = O.note || ''; $('#oLegend').value = O.legend;
+  syncUnits();
+  $('#oMargin').checked = O.showMargin; $('#oLast').checked = O.showLast; $('#oLastBar').checked = O.showLastBar;
+  $('#oMColor').value = O.marginColor; $('#oH').value = O.height; $('#oHv').textContent = O.height;
+  syncSize();
+  $('#oYMax').value = O.yMax || ''; $('#oRMax').value = O.rMax || '';
+  if (M) {
+    document.querySelectorAll('#granTabs button').forEach(b => { const g = b.dataset.g; b.classList.toggle('on', M.gran === g); b.disabled = !M.views[g].periods.length; b.title = b.disabled ? `${g === 'Q' ? '四半期' : '年度'}のシートがありません` : ''; });
+    $('#nQlab').textContent = M.gran === 'Y' ? '年数' : '四半期数';
+    const L = M.periods.length, nq = $('#nQ');
+    nq.min = Math.min(3, L); nq.max = Math.max(L, 3); nq.value = O.nQ; $('#nQv').textContent = O.nQ;
+    $('#endP').innerHTML = M.periods.map((p, i) => `<option value="${i}">${esc(plab(p))}</option>`).join('');
+    $('#endP').value = O.endIdx;
+  }
+}
+
+function syncUnits() {
+  const opts = CURRENCIES.map(([c, l]) => `<option value="${c}">${esc(l)}${c !== 'custom' ? ` (${c})` : ''}</option>`).join('');
+  if (!$('#oCur').options.length) {
+    $('#oCur').innerHTML = opts;
+    $('#oDispCur').innerHTML = '<option value="same">データと同じ</option>' + CURRENCIES.filter(c => c[0] !== 'custom').map(([c, l]) => `<option value="${c}">${esc(l)} (${c})</option>`).join('');
+  }
+  $('#oCur').value = O.cur; $('#oCurCustom').value = O.curCustom;
+  $('#oDataUnit').value = String(O.dataUnit === 1 ? '1' : O.dataUnit.toExponential().replace('e+', 'e'));
+  $('#oDispUnit').value = O.dispUnit === 'auto' ? 'auto' : (+O.dispUnit).toExponential().replace('e+', 'e');
+  $('#oDispCur').value = O.dispCur;
+  $('#wrapCurCustom').style.display = O.cur === 'custom' ? '' : 'none';
+  const conv = dispCurCode() !== O.cur;
+  $('#wrapFx').style.display = conv ? '' : 'none';
+  $('#fxLab1').textContent = `1 ${curLabel(O.cur) || '通貨'} =`;
+  $('#fxLab2').textContent = curLabel(dispCurCode());
+  $('#oFx').value = O.fx || '';
+  const dl = (UNIT_LABEL[O.dataUnit] ?? '') + (curLabel(O.cur) || '');
+  $('#unitNote').innerHTML = M ? `シートの数値＝<b>${esc(dl)}</b> → 表示＝<b>${esc(unitText())}</b>` + (conv && !fxRate() ? '<br><span style="color:#b45309">換算レートを入力してください</span>' : '') : '';
+}
+function syncSize() {
+  $('#oRatio').value = O.ratio;
+  $('#oRW').value = O.rw; $('#oRH').value = O.rh; $('#oPW').value = Math.round(O.pw); $('#oPH').value = Math.round(O.ph);
+  $('#wrapRatio').style.display = O.ratio === 'custom' ? '' : 'none';
+  $('#wrapPx').style.display = O.ratio === 'px' ? '' : 'none';
+  $('#wrapH').style.display = O.ratio === 'fit' ? '' : 'none';
+}
+function bindResize() {
+  let drag = null;
+  const host = $('#chart');
+  host.addEventListener('pointerdown', e => {
+    if (!e.target.classList.contains('rz')) return;
+    e.preventDefault();
+    const svg = host.querySelector('svg');
+    drag = { x: e.clientX, y: e.clientY, w: +svg.getAttribute('width'), h: +svg.getAttribute('height') };
+    $('#tip').style.opacity = 0;
+  });
+  window.addEventListener('pointermove', e => {
+    if (!drag) return;
+    let w = clamp(drag.w + (e.clientX - drag.x), 360, 4000);
+    let h = clamp(drag.h + (e.clientY - drag.y), 240, 3000);
+    if (e.shiftKey) h = clamp(w * drag.h / drag.w, 240, 3000);
+    O.ratio = 'px'; O.pw = Math.round(w); O.ph = Math.round(h);
+    render(); syncSize();
+    const rz = host.querySelector('.rz'), lab = host.querySelector('.rzlab');
+    rz.classList.add('on'); lab.classList.add('on');
+    lab.textContent = `${O.pw} × ${O.ph}　${ratioLabel(O.pw, O.ph)}`;
+  });
+  window.addEventListener('pointerup', () => { if (!drag) return; drag = null; persistOpt(); scheduleRender(); });
+}
+function persistOpt() {
+  store.save({ opt: { legend: O.legend, showMargin: O.showMargin, showLast: O.showLast, showLastBar: O.showLastBar, marginColor: O.marginColor, height: O.height, ratio: O.ratio, rw: O.rw, rh: O.rh, pw: O.pw, ph: O.ph } });
+}
+function renderSegList() {
+  const el = $('#segList'); el.innerHTML = '';
+  M.segs.forEach((s, idx) => {
+    const row = document.createElement('div');
+    row.className = 'segrow' + (s.visible ? '' : ' off');
+    row.innerHTML = `<input type="checkbox" class="vis" ${s.visible ? 'checked' : ''} title="表示/非表示">
+      <label class="chip" title="色を変更" style="--c:${s.opColor || s.color};--t:${s.salesColor || tint(s.color)}"><input type="color" value="${s.color}"></label>
+      <div class="nm"><div title="${esc(s.label)}">${esc(s.label)}</div>${s.subtitle ? `<small>${esc(s.subtitle)}</small>` : ''}</div>
+      <div class="mv"><button class="up" ${idx === 0 ? 'disabled' : ''} title="上へ">▲</button><button class="dn" ${idx === M.segs.length - 1 ? 'disabled' : ''} title="下へ">▼</button></div>`;
+    row.querySelector('.vis').onchange = e => { s.visible = e.target.checked; row.classList.toggle('off', !s.visible); scheduleRender(); };
+    row.querySelector('input[type=color]').oninput = e => {
+      s.color = e.target.value; s.salesColor = null; s.opColor = null;
+      const chip = row.querySelector('.chip'); chip.style.setProperty('--c', s.color); chip.style.setProperty('--t', tint(s.color));
+      scheduleRender();
+    };
+    const mv = d => { const j = idx + d; [M.segs[idx], M.segs[j]] = [M.segs[j], M.segs[idx]]; renderSegList(); render(); };
+    row.querySelector('.up').onclick = () => mv(-1);
+    row.querySelector('.dn').onclick = () => mv(1);
+    el.appendChild(row);
+  });
+}
+
+function renderPalettes() {
+  $('#palettes').innerHTML = Object.entries(PALETTES).map(([nm, cs]) =>
+    `<button class="pal" data-p="${esc(nm)}"><span>${cs.slice(0, 6).map(c => `<i style="background:${c}"></i>`).join('')}</span>${esc(nm)}</button>`).join('');
+  $('#palettes').onclick = e => {
+    const b = e.target.closest('.pal'); if (!b || !M) return;
+    const cs = PALETTES[b.dataset.p];
+    M.segs.forEach((s, i) => { s.color = cs[i % cs.length]; s.salesColor = null; s.opColor = null; });
+    renderSegList(); render();
+  };
+}
+
+function bindControls() {
+  const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
+  const persist = persistOpt;
+  on('#oRatio', 'change', e => {
+    const svg = $('#chart svg');
+    if (e.target.value === 'px' && svg) { O.pw = +svg.getAttribute('width'); O.ph = +svg.getAttribute('height'); }
+    if (e.target.value === 'custom' && O.ratio !== 'custom' && O.ratio !== 'fit' && O.ratio !== 'px') [O.rw, O.rh] = ratioOf();
+    O.ratio = e.target.value; syncSize(); render(); persist();
+  });
+  ['#oRW', '#oRH'].forEach(id => on(id, 'input', () => { O.rw = num($('#oRW').value) || O.rw; O.rh = num($('#oRH').value) || O.rh; scheduleRender(); persist(); }));
+  ['#oPW', '#oPH'].forEach(id => on(id, 'change', () => { O.pw = clamp(num($('#oPW').value) || O.pw, 360, 4000); O.ph = clamp(num($('#oPH').value) || O.ph, 240, 3000); syncSize(); render(); persist(); }));
+  on('#oTitle', 'input', e => { O.title = e.target.value; scheduleRender(); });
+  on('#oCompany', 'input', e => { O.company = e.target.value; scheduleRender(); });
+  on('#oNote', 'input', e => { O.note = e.target.value; scheduleRender(); });
+  const uChg = () => { syncUnits(); render(); };
+  on('#oCur', 'change', e => { O.cur = e.target.value; if (O.dispCur === O.cur) O.dispCur = 'same'; O.fx = null; uChg(); });
+  on('#oCurCustom', 'input', e => { O.curCustom = e.target.value; syncUnits(); scheduleRender(); });
+  on('#oDataUnit', 'change', e => { O.dataUnit = +e.target.value; uChg(); });
+  on('#oDispUnit', 'change', e => { O.dispUnit = e.target.value === 'auto' ? 'auto' : String(+e.target.value); uChg(); });
+  on('#oDispCur', 'change', e => { O.dispCur = e.target.value === O.cur ? 'same' : e.target.value; O.fx = null; uChg(); });
+  on('#oFx', 'input', e => { O.fx = num(e.target.value) > 0 ? num(e.target.value) : null; syncUnits(); scheduleRender(); });
+  on('#oLegend', 'change', e => { O.legend = e.target.value; render(); persist(); });
+  on('#oMargin', 'change', e => { O.showMargin = e.target.checked; render(); persist(); });
+  on('#oLast', 'change', e => { O.showLast = e.target.checked; render(); persist(); });
+  on('#oLastBar', 'change', e => { O.showLastBar = e.target.checked; render(); persist(); });
+  on('#oMColor', 'input', e => { O.marginColor = e.target.value; scheduleRender(); persist(); });
+  on('#oH', 'input', e => { O.height = +e.target.value; $('#oHv').textContent = O.height; scheduleRender(); persist(); });
+  on('#oYMax', 'input', e => { O.yMax = num(e.target.value) || null; scheduleRender(); });
+  on('#oRMax', 'input', e => { O.rMax = num(e.target.value) || null; scheduleRender(); });
+  on('#nQ', 'input', e => { O.nQ = +e.target.value; O.nByG = O.nByG || {}; O.nByG[M.gran] = O.nQ; $('#nQv').textContent = O.nQ; scheduleRender(); });
+  on('#oGaps', 'change', e => { O.fillGaps = e.target.checked; if (M) setGran(M.gran); });
+  $('#granTabs').onclick = e => { const b = e.target.closest('button'); if (b && !b.disabled && M) setGran(b.dataset.g); };
+  on('#endP', 'change', e => { O.endIdx = +e.target.value; if (O.nQ > O.endIdx + 1) { O.nQ = O.endIdx + 1; } syncControls(); render(); });
+
+  // タブ
+  $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) setTab(b.dataset.tab); };
+
+  on('#applyPaste', 'click', () => {
+    const a = $('#pasteData').value, b = $('#pasteExtra').value;
+    if (!a.trim()) { setStatus('data シートの内容を貼り付けてください', true); return; }
+    const tables = [...splitBlocks(parseDelimited(a)), ...splitBlocks(parseDelimited(b))].map((rows, i) => ({ name: 'paste' + i, rows }));
+    if (ingest(tables, 'paste')) store.save({ paste: [a, b], tab: 'paste' });
+  });
+  on('#loadSample', 'click', () => { loadSample(); store.save({ tab: 'sample' }); });
+  on('#dlTemplate', 'click', downloadTemplate);
+  on('#fileIn', 'change', e => { const f = e.target.files[0]; if (f) readFile(f); e.target.value = ''; });
+  const drop = $('#drop');
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, () => drop.classList.remove('over')));
+  drop.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+
+  on('#resetColors', 'click', () => { if (!M) return; M.segs.forEach(s => { s.color = s.defaultColor; s.salesColor = s.sheetSales; s.opColor = s.sheetOp; }); renderSegList(); render(); toast('シートで指定した色に戻しました'); });
+  on('#copyColors', 'click', async () => {
+    if (!M) return;
+    const tsv = ['セグメント\tサブタイトル\t色\t表示', ...M.segs.map(s => [s.name, s.subtitle, s.color, s.visible ? 'TRUE' : 'FALSE'].join('\t'))].join('\n');
+    try { await navigator.clipboard.writeText(tsv); toast('コピーしました。segments シートに貼り付けてください'); } catch (e) { toast('コピーできませんでした'); }
+  });
+  on('#saveColors', 'click', () => {
+    if (!M || !IS_GAS) return;
+    const items = M.segs.map(s => ({ name: s.name, color: s.color, visible: s.visible }));
+    google.script.run.withSuccessHandler(() => { M.segs.forEach(s => { s.defaultColor = s.color; s.sheetSales = null; s.sheetOp = null; }); toast('segments シートに色と並び順を保存しました'); })
+      .withFailureHandler(err => toast('保存に失敗: ' + err.message)).saveSegments(M.segTable || 'segments', items, SHEET_ID);
+  });
+  on('#reloadSheet', 'click', loadFromSheet);
+  on('#sheetUrl', 'keydown', e => { if (e.key === 'Enter') loadFromSheet(); });
+  on('#dlPng', 'click', async () => { const b = await toPng(2); if (b) saveFile(fileBase() + '.png', b); });
+  on('#dlSvg', 'click', () => { const s = svgString(); if (s) saveFile(fileBase() + '.svg', new Blob([s], { type: 'image/svg+xml' })); });
+  on('#copyPng', 'click', async () => {
+    try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': toPng(2) })]); toast('画像をコピーしました'); }
+    catch (e) { toast('この環境では画像のコピーができません。PNG保存をお使いください'); }
+  });
+
+  new ResizeObserver(() => scheduleRender()).observe($('#chart'));
+  bindHover();
+  bindResize();
+  window.addEventListener('resize', () => { if (O.ratio !== 'fit' && O.ratio !== 'px') scheduleRender(); });
+}
+
+function setTab(t) {
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === t));
+}
+
+/* ファイル読込 */
+let xlsxReady = null;
+function loadXLSX() {
+  if (window.XLSX) return Promise.resolve();
+  return xlsxReady || (xlsxReady = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = res; s.onerror = () => { xlsxReady = null; rej(new Error('xlsx ライブラリを読み込めませんでした')); };
+    document.head.appendChild(s);
+  }));
+}
+async function readFile(f) {
+  try {
+    setStatus('読み込み中…');
+    if (/\.(xlsx|xls)$/i.test(f.name)) {
+      await loadXLSX();
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const tables = wb.SheetNames.map(nm => ({ name: nm, rows: XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: false, defval: '' }) }));
+      ingest(tables, 'file');
+    } else {
+      const txt = await f.text();
+      ingest(splitBlocks(parseDelimited(txt)).map((rows, i) => ({ name: f.name + i, rows })), 'file');
+    }
+  } catch (e) { setStatus('読み込みに失敗しました: ' + esc(e.message), true); }
+}
+
+/* Apps Script（スプレッドシート内）から読む */
+let SHEET_ID = '';
+const sheetIdFrom = v => { v = String(v || '').trim(); const m = v.match(/\/d\/([a-zA-Z0-9_-]{20,})/); return m ? m[1] : (/^[a-zA-Z0-9_-]{20,}$/.test(v) ? v : ''); };
+function loadFromSheet() {
+  const typed = $('#sheetUrl').value.trim();
+  if (IS_WEB) return loadViaPublished(typed);
+  if (typed) {
+    const id = sheetIdFrom(typed);
+    if (!id) { setStatus('スプレッドシートのURLを確認してください（https://docs.google.com/spreadsheets/d/… の形式）', true); return; }
+    SHEET_ID = id;
+  }
+  if (!IS_GAS) {
+    if (!SHEET_ID) { setStatus('スプレッドシートのURLを入力してください', true); return; }
+    return loadViaMcp(SHEET_ID, typed || ('https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/edit'));
+  }
+  setStatus('シートを読み込み中…');
+  google.script.run
+    .withSuccessHandler(res => {
+      if (!res || !res.tables) return;
+      SHEET_ID = res.id || SHEET_ID;
+      if (res.url && !$('#sheetUrl').value) $('#sheetUrl').value = res.url;
+      try { if (SHEET_ID && google.script.history) google.script.history.replace(null, { id: SHEET_ID }); } catch (e) {}
+      if (ingest(res.tables, 'sheet') && res.name) setStatus($('#status').innerHTML + `<br>📄 ${esc(res.name)}`);
+    })
+    .withFailureHandler(e => setStatus(esc(e.message), true))
+    .getSheetTables(SHEET_ID);
+}
+
+/* ---------- 「ウェブに公開」したスプレッドシートを読む（GitHub Pages 版） ---------- */
+const pubToken = v => { const m = String(v || '').match(/spreadsheets\/d\/e\/([\w-]{20,})/); return m ? m[1] : (/^2PACX-[\w-]+$/.test(String(v).trim()) ? String(v).trim() : ''); };
+async function loadViaPublished(input) {
+  input = String(input || '').trim();
+  if (!input) { setStatus('スプレッドシートの「ウェブに公開」URLを入力してください', true); return; }
+  const tok = pubToken(input), id = tok ? '' : sheetIdFrom(input);
+  if (!tok && !id) { setStatus('URLの形式を確認してください。「ファイル → 共有 → ウェブに公開」で発行した https://docs.google.com/spreadsheets/d/e/… のURLを貼ってください。', true); return; }
+  const url = tok ? `https://docs.google.com/spreadsheets/d/e/${tok}/pub?output=xlsx` : `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`;
+  const btn = $('#reloadSheet'); btn.disabled = true;
+  try {
+    setStatus('スプレッドシートを読み込み中…');
+    await loadXLSX();
+    let buf;
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      buf = await r.arrayBuffer();
+    } catch (e) {
+      setStatus(tok
+        ? 'スプレッドシートを読み込めませんでした。「ウェブに公開」が「ドキュメント全体」になっているか、公開を停止していないかを確認してください。<br><small>' + esc(e.message) + '</small>'
+        : 'このURL（通常の編集用URL）では読み込めません。スプレッドシートで「ファイル → 共有 → ウェブに公開」を開き、「ドキュメント全体」「Microsoft Excel (.xlsx)」で「公開」を押して、表示されたURLを貼ってください。', true);
+      return;
+    }
+    const head = new Uint8Array(buf.slice(0, 2));
+    if (!(head[0] === 0x50 && head[1] === 0x4b)) { setStatus('Excel形式で受け取れませんでした。「ウェブに公開」の形式を「Microsoft Excel (.xlsx)」にしてください。', true); return; }
+    const wb = XLSX.read(buf, { type: 'array' });
+    const tables = wb.SheetNames.map(nm => ({ name: nm, rows: XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: false, defval: '' }) }));
+    if (ingest(tables, 'web')) {
+      const key = tok || id;
+      try { const u = new URL(location.href); u.searchParams.set('sheet', key); history.replaceState(null, '', u); } catch (e) {}
+      const name = O.company || key.slice(0, 12) + '…';
+      rememberSheet(key, name, input);
+      setStatus($('#status').innerHTML + '<br><small>ページのURLをブックマークすると、次からこのシートを直接開けます。シートの更新が反映されるまで数分かかることがあります。</small>');
+    }
+  } catch (e) {
+    setStatus('読み込みに失敗しました: ' + esc(e.message), true);
+  } finally { btn.disabled = false; }
+}
+
+/* ---------- Claude の Google Sheets 連携（Claude 上で公開したページ用） ---------- */
+const GS = 'Google Sheets';
+let mcpP = null;
+const schemaCache = {};
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let mcpWhy = '';
+function getMcp() {
+  // null は覚えない（許可後にもう一度押せば使えるように）
+  if (!mcpP) mcpP = (async () => {
+    if (!(window.claude && claude.use)) { mcpWhy = 'noclaude'; return null; }
+    try { const m = await claude.use('mcp'); mcpWhy = m ? '' : 'null'; return m; }
+    catch (e) { mcpWhy = 'err'; return null; }
+  })().then(m => { if (!m) mcpP = null; return m; });
+  return mcpP;
+}
+async function toolSchema(mcp, tool) {
+  if (schemaCache[tool]) return schemaCache[tool];
+  try {
+    const d = await mcp.describeTool(GS, tool);
+    const props = (d && d.inputSchema && d.inputSchema.properties) || {};
+    return (schemaCache[tool] = { props: Object.keys(props) });
+  } catch (e) { return null; }
+}
+function buildInput(sch, id, url, extra) {
+  if (!sch) { const o = { spreadsheetId: id }; if (extra.range) o.range = extra.range; else o.fields = ['properties.title', 'sheets.properties.title']; return o; }
+  const P = sch.props, inp = {};
+  if (!extra.range && P.includes('fields')) inp.fields = ['properties.title', 'sheets.properties.title'];
+  const idk = P.find(k => /spreadsheet.?id/i.test(k)) || P.find(k => /^(id|file.?id|document.?id)$/i.test(k));
+  const urlk = P.find(k => /url|link/i.test(k));
+  if (idk) inp[idk] = id; else if (urlk) inp[urlk] = url; else inp[P[0] || 'spreadsheetId'] = id;
+  if (extra.range) {
+    const rk = P.find(k => /^range$/i.test(k)) || P.find(k => /range/i.test(k) && !/ranges/i.test(k));
+    const rsk = P.find(k => /ranges/i.test(k));
+    const sk = P.find(k => /sheet.?(name|title)|^sheet$|^tab/i.test(k));
+    if (rk) inp[rk] = extra.range; else if (rsk) inp[rsk] = [extra.range]; else if (sk) inp[sk] = extra.sheet;
+  }
+  return inp;
+}
+function payloadOf(res) {
+  if (!res) return null;
+  if (res.payload !== undefined) return res.payload;
+  const t = (res.content || []).find(c => c.type === 'text');
+  return t ? t.text : null;
+}
+function findSheetTitles(p) {
+  if (typeof p === 'string') { try { p = JSON.parse(p); } catch (e) { return []; } }
+  const out = [];
+  const walk = o => {
+    if (!o || typeof o !== 'object') return;
+    if (Array.isArray(o)) { o.forEach(walk); return; }
+    for (const [k, v] of Object.entries(o)) {
+      if (/^(sheets|tabs|worksheets|sheetnames|sheet_names)$/i.test(k) && Array.isArray(v)) {
+        v.forEach(sh => {
+          const t = typeof sh === 'string' ? sh : sh && ((sh.properties && sh.properties.title) || sh.title || sh.name || sh.sheetName);
+          if (typeof t === 'string') out.push(t);
+        });
+      } else walk(v);
+    }
+  };
+  walk(p);
+  return [...new Set(out)];
+}
+function bookTitle(p) {
+  if (typeof p === 'string') { try { p = JSON.parse(p); } catch (e) { return ''; } }
+  return (p && ((p.properties && p.properties.title) || p.title || p.name)) || '';
+}
+function findGrid(p) {
+  if (p == null) return null;
+  if (typeof p === 'string') {
+    const s = p.trim();
+    if (/^[\[{]/.test(s)) { try { return findGrid(JSON.parse(s)); } catch (e) {} }
+    if (/^\|/m.test(s)) return s.split('\n').filter(l => /^\s*\|/.test(l) && !/^\s*\|[\s:|-]+\|\s*$/.test(l)).map(l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim()));
+    return parseDelimited(s);
+  }
+  let best = null;
+  const isGrid = a => Array.isArray(a) && a.length && a.every(r => Array.isArray(r));
+  const walk = o => {
+    if (best || !o || typeof o !== 'object') return;
+    if (isGrid(o)) { best = o; return; }
+    if (!Array.isArray(o) && isGrid(o.values)) { best = o.values; return; }
+    if (Array.isArray(o) && o.length && o.every(r => r && typeof r === 'object' && !Array.isArray(r))) {
+      const keys = Object.keys(o[0]); if (keys.length >= 2 && o.every(r => Object.values(r).every(v => v == null || typeof v !== 'object'))) { best = [keys, ...o.map(r => keys.map(k => r[k] ?? ''))]; return; }
+    }
+    (Array.isArray(o) ? o : Object.values(o)).forEach(walk);
+  };
+  walk(p);
+  return best ? best.map(r => r.map(c => c == null ? '' : (typeof c === 'object' ? (c.formattedValue ?? c.value ?? '') : c))) : null;
+}
+function mcpErrMsg(e) {
+  const c = e && e.code, m = esc((e && e.message) || '');
+  switch (c) {
+    case 'server_not_connected': return '「Google Sheets」連携がまだ接続されていません。claude.ai の 設定 → コネクタ で Google Sheets を接続してから、もう一度「読み込む」を押してください。';
+    case 'selection_required': return 'Google Sheets 連携が複数あります。表示される選択画面で使う連携を選んでから、もう一度「読み込む」を押してください。';
+    case 'needs_reauth': return 'Google Sheets 連携の認証が切れています。claude.ai の 設定 → コネクタ で再接続してください。';
+    case 'not_in_manifest': return 'このページでの Google Sheets 連携の利用が許可されていません。許可してから、もう一度「読み込む」を押してください。';
+    case 'approval_required': return '読み込みには許可が必要です。もう一度「読み込む」を押し、表示される確認で「許可」を選んでください。';
+    case 'blocked_by_policy': return '組織の設定により、このページから Google Sheets 連携は使えません。貼り付けかファイル読込をご利用ください。';
+    case 'tool_error': return 'スプレッドシートを読めませんでした。URL と閲覧権限を確認してください。' + (m ? `<br><small>${m}</small>` : '');
+    case 'not_granted': case 'capability_disabled': case 'capability_removed': return NO_MCP_MSG;
+    case 'server_unavailable': return 'Google Sheets に一時的に接続できませんでした。少し待ってから再度お試しください。';
+    default: return '読み込みに失敗しました。' + (m ? `<br><small>${m}</small>` : '');
+  }
+}
+const NO_MCP_MSG = 'この表示ではGoogleスプレッドシートに直接接続できません。claude.ai 上でこのページを開くか、「貼り付け」「ファイル」タブ、または Apps Script 版をご利用ください。';
+function recentList() { return store.load().recent || []; }
+function renderRecent() {
+  $('#recentSheets').innerHTML = recentList().map(r => `<option value="${esc(r.url)}">${esc(r.name || '')}</option>`).join('');
+}
+function rememberSheet(id, name, url) {
+  const list = recentList().filter(r => r.id !== id);
+  list.unshift({ id, name, url });
+  store.save({ recent: list.slice(0, 8), lastSheet: id, tab: 'sheet' });
+  renderRecent();
+}
+async function loadViaMcp(id, url) {
+  const btn = $('#reloadSheet'); btn.disabled = true;
+  try {
+    setStatus('Googleスプレッドシートに接続中…');
+    const mcp = await getMcp();
+    if (!mcp) {
+      setStatus(mcpWhy === 'noclaude'
+        ? 'このページは claude.ai の外で開かれているため、Googleスプレッドシートに接続できません。claude.ai 上で開くか、「貼り付け」「ファイル」タブ、または Apps Script 版をご利用ください。'
+        : 'このページに Google Sheets 連携の利用が許可されていません。<br>① claude.ai の 設定 → コネクタ で「Google Sheets」が接続済みか確認<br>② このページを再読み込みし、表示される「Google Sheets へのアクセス」の確認で <b>許可</b> を選ぶ<br>③ もう一度「読み込む」を押す<br><small>スマートフォンアプリでは連携が使えない場合があります。PCのブラウザでお試しください。</small>', true);
+      return;
+    }
+    const call = async (tool, input) => {
+      try { return await mcp.callTool(GS, tool, input, { cache: false }); }
+      catch (e) {
+        if (e && e.retryable) { await sleep((e.retryAfterMs || 800) + Math.random() * 500); return await mcp.callTool(GS, tool, input, { cache: false }); }
+        throw e;
+      }
+    };
+    const smart = async (tool, extra) => {
+      let sch = await toolSchema(mcp, tool);
+      const inp = buildInput(sch, id, url, extra);
+      try { return await call(tool, inp); }
+      catch (e) {
+        if (!sch && e && (e.code === 'tool_error' || e.code === 'upstream_error')) {
+          sch = await toolSchema(mcp, tool);
+          if (sch) { const inp2 = buildInput(sch, id, url, extra); if (JSON.stringify(inp2) !== JSON.stringify(inp)) return await call(tool, inp2); }
+        }
+        throw e;
+      }
+    };
+    const meta = payloadOf(await smart('get_spreadsheet', {}));
+    let titles = findSheetTitles(meta);
+    const name = bookTitle(meta);
+    if (!titles.length) titles = ['data', 'segments', 'config'];
+    const tables = [], failed = [];
+    for (const t of titles.slice(0, 15)) {
+      setStatus(`シート「${esc(t)}」を読み込み中…`);
+      const q = "'" + t.replace(/'/g, "''") + "'";
+      let grid = null;
+      try { grid = findGrid(payloadOf(await smart('get_values', { range: q, sheet: t }))); }
+      catch (e) {
+        if (e && e.code !== 'tool_error') throw e;
+        try { grid = findGrid(payloadOf(await smart('get_values', { range: q + '!A1:Z3000', sheet: t }))); } catch (e2) { if (e2 && e2.code !== 'tool_error') throw e2; }
+      }
+      if (grid && grid.length) tables.push({ name: t, rows: grid.map(r => r.map(c => String(c ?? ''))) });
+      else failed.push(t);
+    }
+    if (!tables.length) { setStatus('シートの値を取得できませんでした。URL と閲覧権限を確認してください。', true); return; }
+    if (ingest(tables, 'gsheet')) {
+      rememberSheet(id, name, url);
+      setStatus($('#status').innerHTML + (name ? `<br>📄 ${esc(name)}` : '') + (failed.length ? `<br><span style="color:#b45309">⚠ 読めなかったシート: ${failed.map(esc).join('、')}</span>` : ''));
+    }
+  } catch (e) {
+    setStatus(mcpErrMsg(e), true);
+  } finally { btn.disabled = false; }
+}
+
+function startGas() {
+  setTab('sheet');
+  const go = () => loadFromSheet();
+  try {
+    google.script.url.getLocation(loc => {
+      const id = loc && loc.parameter && loc.parameter.id;
+      if (id) { SHEET_ID = id; $('#sheetUrl').value = 'https://docs.google.com/spreadsheets/d/' + id + '/edit'; }
+      go();
+    });
+  } catch (e) { go(); }
+}
+
+/* 書き出し */
+function svgString() {
+  const svg = $('#chart svg'); if (!svg) return null;
+  const c = svg.cloneNode(true);
+  c.querySelectorAll('.hov,.hl').forEach(n => n.remove());
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(c);
+}
+async function toPng(scale) {
+  const s = svgString(); if (!s) return null;
+  const svg = $('#chart svg'), W = +svg.getAttribute('width'), Hh = +svg.getAttribute('height');
+  const img = new Image();
+  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s); });
+  const cv = document.createElement('canvas'); cv.width = W * scale; cv.height = Hh * scale;
+  const ctx = cv.getContext('2d'); ctx.scale(scale, scale); ctx.drawImage(img, 0, 0);
+  return await new Promise(r => cv.toBlob(r, 'image/png'));
+}
+const fileBase = () => (titleText() || 'segment-chart').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60);
+let dlApi = null;
+async function saveFile(name, blob) {
+  if (dlApi) {
+    try { await dlApi.save({ filename: name, data: blob }); return; }
+    catch (e) { if (e && e.code === 'declined') return; if (!['unavailable','not_granted','capability_disabled','capability_removed'].includes(e && e.code)) { toast('保存できませんでした'); return; } }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+/* =========================================================
+   サンプル & テンプレート
+   ========================================================= */
+const SAMPLE = {
+  config: [['項目','値','説明'],
+    ['企業名','信越化学','タイトルの {企業名} に入ります'],
+    ['タイトル','{企業名}　領域別業績推移（{区分}・サンプル）','空欄なら「企業名　セグメント別業績推移」。{企業名} {単位} {通貨} が使えます'],
+    ['通貨','円','シートの数値の通貨。円 / USD / EUR / TWD / HKD / KRW / DKK など'],
+    ['データの単位','百万','シートに入力した数値の単位（千 / 百万 / 億）'],
+    ['表示単位','億','自動 / 百万 / 億 / 十億 / 兆'],
+    ['表示通貨','','別の通貨に換算して表示したいときだけ'],
+    ['換算レート','','1データ通貨＝○表示通貨'],
+    ['注記','出所：決算説明資料をもとに目視で概算','グラフ左下に表示'],
+    ['凡例','上','上 / 下 / なし'],
+    ['利益率線の色','#c0151f','カラーコードか色名'],
+    ['表示区分','四半期','最初に表示する区分（四半期 / 年度）'],
+    ['表示四半期数','22','四半期表示で最新から何四半期を表示するか'],
+    ['表示年数','','年度表示で最新から何年を表示するか（空欄で全部）'],
+    ['縦横比','画面に合わせる','16:9 / 4:3 / 1:1 / 9:16 など']],
+  segments: [
+    ['セグメント','表示名','サブタイトル','色','表示'],
+    ['生活環境基盤材料','','塩ビ・苛性ソーダ等','#3f9b4b','TRUE'],
+    ['電子材料','','ウエハ・レジスト等','#e47a2e','TRUE'],
+    ['機能材料','','シリコーン等','#4a8ad4','TRUE'],
+    ['加工・商事・技術サービス','','樹脂加工品等','#d4a72c','TRUE'],
+  ],
+  series: {
+    '生活環境基盤材料': [[1570,2070,2320,2610,2900,3620,3580,2980,2400,2500,2660,2530,2320,2770,2680,2640,2440,2560,2470,2330,2440,2780],[440,790,890,1050,1290,1610,1500,1020,800,850,880,680,680,840,740,650,530,500,440,190,350,520]],
+    '電子材料': [[1610,1750,1810,1920,2110,2280,2330,2030,2200,2050,2170,2080,2260,2370,2440,2250,2400,2560,2540,2650,2790,2990],[570,620,650,610,780,820,840,580,800,740,610,570,900,970,740,640,830,880,890,850,1020,1170]],
+    '機能材料': [[920,970,1010,1060,1250,1300,1280,1090,1080,1070,1110,980,1060,1190,1150,1070,1090,1150,1080,1080,1180,1270],[230,240,220,260,370,370,330,250,260,260,220,120,270,270,250,220,240,240,230,270,290,350]],
+    '加工・商事・技術サービス': [[200,240,240,260,260,280,300,290,260,290,280,280,280,290,310,300,300,290,290,300,330,340],[44,42,50,39,59,61,60,46,47,55,57,50,50,64,70,58,60,61,57,55,69,88]],
+  },
+};
+function sampleTables() {
+  const segs = Object.keys(SAMPLE.series), N = SAMPLE.series[segs[0]][0].length;
+  const note = '四半期と年度は別シートで管理します。period以外の列（セグメント）は自由に追加・削除できます。単位：百万円';
+  const make = (title, idx, gran) => {
+    const rows = [[title], [note], ['period', ...segs]];
+    if (gran === 'Q') for (let i = 0; i < N; i++) rows.push([`FY${2021 + Math.floor(i / 4)} Q${i % 4 + 1}`, ...segs.map(sg => SAMPLE.series[sg][idx][i] * 100)]);
+    else for (let y = 0; y < Math.floor(N / 4); y++) rows.push([`FY${2021 + y}`, ...segs.map(sg => SAMPLE.series[sg][idx].slice(y * 4, y * 4 + 4).reduce((a, b) => a + b, 0) * 100)]);
+    return { name: title, rows };
+  };
+  return [
+    make('セグメント売上高_四半期', 0, 'Q'), make('セグメント売上高_年度', 0, 'Y'),
+    make('セグメント利益_四半期', 1, 'Q'), make('セグメント利益_年度', 1, 'Y'),
+  ];
+}
+function loadSample() {
+  ingest([...sampleTables(), { name: 'segments', rows: SAMPLE.segments }, { name: 'config', rows: SAMPLE.config }], 'sample');
+}
+async function downloadTemplate() {
+  try {
+    await loadXLSX();
+    const wb = XLSX.utils.book_new();
+    const add = (rows, nm, widths) => { const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, nm); };
+    add(SAMPLE.config, 'config', [16, 40, 60]);
+    add(SAMPLE.segments, 'segments', [24, 18, 20, 12, 8]);
+    sampleTables().forEach(t => add(t.rows, t.name, [14, 20, 20, 20, 24]));
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    saveFile('segment_chart_template.xlsx', new Blob([buf]));
+  } catch (e) { toast('テンプレートを作成できませんでした'); }
+}
+
+/* =========================================================
+   起動
+   ========================================================= */
+(function init() {
+  if (IS_GAS) document.body.classList.add('gas');
+  if (IS_WEB) document.body.classList.add('web');
+  const st = store.load();
+  if (st.opt) Object.assign(O, st.opt);
+  if (st.paste) { $('#pasteData').value = st.paste[0] || ''; $('#pasteExtra').value = st.paste[1] || ''; }
+  syncControls(); renderPalettes(); bindControls();
+  if (IS_GAS) startGas();
+  else if (IS_WEB) {
+    renderRecent(); setTab('sheet'); loadSample();
+    const q = new URLSearchParams(location.search).get('sheet');
+    const last = !q && st.lastSheet && recentList().find(r => r.id === st.lastSheet);
+    if (q) { $('#sheetUrl').value = q.startsWith('2PACX') ? `https://docs.google.com/spreadsheets/d/e/${q}/pubhtml` : `https://docs.google.com/spreadsheets/d/${q}/edit`; loadViaPublished($('#sheetUrl').value); }
+    else if (last) { $('#sheetUrl').value = last.url; loadViaPublished(last.url); }
+  }
+  else {
+    renderRecent();
+    const last = st.lastSheet && recentList().find(r => r.id === st.lastSheet);
+    if (st.tab === 'paste' && st.paste && st.paste[0]) { setTab('paste'); $('#applyPaste').click(); if (!M) loadSample(); }
+    else if (st.tab === 'sheet' && last) { setTab('sheet'); loadSample(); $('#sheetUrl').value = last.url; SHEET_ID = last.id; loadViaMcp(last.id, last.url); }
+    else { setTab(st.tab === 'file' ? 'file' : st.tab === 'sample' ? 'sample' : 'sheet'); loadSample(); }
+  }
+  (async () => { try { if (window.claude && claude.use) dlApi = await claude.use('downloads'); } catch (e) { dlApi = null; } })();
+})();
+</script>
+</body>
+</html>
