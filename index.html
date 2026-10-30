@@ -57,6 +57,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .segrow{display:grid;grid-template-columns:18px 30px 1fr auto;align-items:center;gap:8px;padding:6px 6px;border-radius:8px}
 .segrow:hover{background:var(--soft)}
 .segrow.off .nm{opacity:.4}
+.segrow.total{border-bottom:1px dashed var(--line);border-radius:8px 8px 0 0;margin-bottom:4px}
 .segrow input[type=checkbox]{accent-color:var(--acc);margin:0}
 .chip{position:relative;width:30px;height:22px;border-radius:6px;overflow:hidden;cursor:pointer;background:linear-gradient(var(--t) 0 50%,var(--c) 50% 100%);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
 .chip input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
@@ -293,12 +294,13 @@ function num(v) {
 
 /* 列名の候補（日英・表記ゆれに対応） */
 const H = {
-  seg:        ['セグメント','セグメント名','segment','部門','事業','事業領域','領域'],
+  seg:        ['セグメント','セグメント名','項目名','segment','部門','事業','事業領域','領域'],
+  kind:       ['種類','type','kind'],
   period:     ['期','四半期','決算期','年度','会計年度','period','quarter','時期','fiscalyear','fy','year'],
   sales:      ['売上','売上高','売上収益','sales','revenue','netsales'],
   op:         ['営業利益','セグメント利益','事業利益','利益','operatingincome','operatingprofit','op'],
   item:       ['項目','指標','item','metric'],
-  key:        ['項目','設定','設定項目','key'],
+  key:        ['項目','設定','設定項目','key','setting','settings'],
   value:      ['値','設定値','value'],
   label:      ['表示名','名称','label','name'],
   subtitle:   ['サブタイトル','説明','補足','subtitle'],
@@ -410,13 +412,41 @@ function matrixKind1(text) {
   return { metric, gran };
 }
 
+/* 1つのシートに左右に並んだ表（空の見出し列で区切られたもの）を別々の表に分ける */
+function splitTable(t) {
+  const rows = t.rows || [];
+  const filled = r => r && r.filter(c => String(c ?? '').trim() !== '').length;
+  const hi = rows.findIndex(r => filled(r) >= 2);
+  if (hi < 0) return [t];
+  const h = rows[hi].map(c => String(c ?? '').trim());
+  const groups = []; let cur = null;
+  h.forEach((c, j) => { if (c) { if (!cur) groups.push(cur = { a: j, b: j }); cur.b = j; } else cur = null; });
+  const big = groups.filter(g => g.b - g.a >= 1);
+  if (big.length < 2) return [t];
+  return big.map(g => ({
+    name: t.name,
+    rows: rows.map((r, i) => i < hi && g.a > 0 ? [] : (r || []).slice(g.a, g.b + 1)),
+    bgs: t.bgs ? t.bgs.map(r => (r || []).slice(g.a, g.b + 1)) : undefined,
+  }));
+}
+const rows0 = t => { const rs = t.rows || []; const out = []; for (const r of rs) { const f = (r || []).filter(c => String(c ?? '').trim()); if (f.length >= 2) break; if (f.length) out.push(f.join(' ')); } return out; };
+const TOTAL = '__TOTAL__';
+const isTotalName = n => /会社全体|全社|連結|company.?total|consolidated/i.test(half(n || ''));
+const STRICT_SEG = /^セグメント(売上高|利益)_(四半期|年度)$/;
+const STRICT_TOTAL = /^会社全体_(四半期|年度)$/;
+
 function buildModel(tables, paletteName) {
   const recs = [], segMeta = [], cfg = {}, notes = [];
+  tables = tables.flatMap(splitTable);
+  // 「セグメント売上高_四半期」などの決まった名前のシートがあれば、それ（と会社全体）だけを読む
+  const strict = tables.some(t => STRICT_SEG.test(String(t.name || '').trim()));
   let segTable = null, found = { long: 0, wide: 0, matrix: 0, segments: 0, config: 0 };
   const validBg = c => (c && !/^#?(ffffff|fff)$/i.test(c) && c !== 'white') ? normColor(c) : null;
   for (const t of tables) {
     const cl = classify(t.rows || []);
     if (!cl) continue;
+    const tn = String(t.name || '').trim();
+    if (strict && ['long', 'wide', 'matrix'].includes(cl.type) && !STRICT_SEG.test(tn) && !STRICT_TOTAL.test(tn)) continue;
     found[cl.type]++;
     const { header, body } = cl;
     const col = k => findCol(header, k);
@@ -425,11 +455,13 @@ function buildModel(tables, paletteName) {
       body.forEach(({ r }) => { const k = normH(r[ki]); if (k) cfg[k] = String(r[vi] ?? '').trim(); });
     } else if (cl.type === 'long') {
       const si = col('seg'), pi = col('period'), sa = col('sales'), oi = col('op');
+      const tot = si < 0 && isTotalName(tn);
+      const hint = matrixKind([tn, ...rows0(t)]).gran;
       body.forEach(({ r }) => {
-        const seg = si >= 0 ? String(r[si] ?? '').trim() : (t.name || 'セグメント');
+        const seg = tot ? TOTAL : si >= 0 ? String(r[si] ?? '').trim() : (t.name || 'セグメント');
         const p = String(r[pi] ?? '').trim();
         if (!seg || !p) return;
-        recs.push({ seg, p, sales: sa >= 0 ? num(r[sa]) : null, op: oi >= 0 ? num(r[oi]) : null });
+        recs.push({ seg, p, sales: sa >= 0 ? num(r[sa]) : null, op: oi >= 0 ? num(r[oi]) : null, hint });
       });
     } else if (cl.type === 'wide') {
       const si = col('seg'), ii = col('item');
@@ -441,7 +473,7 @@ function buildModel(tables, paletteName) {
       });
     } else if (cl.type === 'matrix') {
       const k = matrixKind([t.name || '', ...cl.above]);
-      if (!k.metric) { notes.push(`「${t.name}」が売上高か利益か判別できませんでした（シート名に「売上」か「利益」を入れてください）`); continue; }
+      if (!k.metric) { if (!strict) notes.push(`「${t.name}」が売上高か利益か判別できませんでした（シート名に「売上」か「利益」を入れてください）`); continue; }
       body.forEach(({ r }) => {
         const p = String(r[cl.pi] ?? '').trim();
         if (!p) return;
@@ -454,10 +486,11 @@ function buildModel(tables, paletteName) {
       });
     } else if (cl.type === 'segments') {
       segTable = t.name || segTable;
-      const si = col('seg'), li = col('label'), sbi = col('subtitle'), vi = col('visible');
+      const si = col('seg'), li = col('label'), sbi = col('subtitle'), vi = col('visible'), ki = col('kind');
       body.forEach(({ r, i }) => {
         const name = String(r[si] ?? '').trim();
         if (!name) return;
+        if (ki >= 0 && String(r[ki] ?? '').trim() && !/^(セグメント|segment)$/i.test(String(r[ki]).trim())) return;  // ARR など他の種類は対象外
         const bg = (t.bgs && t.bgs[i]) || [];
         const pick = k => { const ci = col(k); return ci < 0 ? null : (normColor(r[ci]) || validBg(bg[ci])); };
         const vis = vi >= 0 ? String(r[vi] ?? '').trim() : '';
@@ -494,7 +527,7 @@ function buildModel(tables, paletteName) {
   recs.forEach(r => {
     if (!r.pp) return;
     const V = views[r.g];
-    if (!segOrder.includes(r.seg)) segOrder.push(r.seg);
+    if (r.seg !== TOTAL && !segOrder.includes(r.seg)) segOrder.push(r.seg);
     if (!V.values[r.seg]) V.values[r.seg] = {};
     if (!V._k) V._k = new Map();
     if (!V._k.has(r.pp.key)) V._k.set(r.pp.key, r.pp);
@@ -520,8 +553,10 @@ function buildModel(tables, paletteName) {
   segOrder.forEach(n => { if (!used.has(n)) segs.push({ name: n, label: n, subtitle: '', sheetColor: null, salesColor: null, opColor: null, marginColor: null, visible: true }); });
   const pal = PALETTES[paletteName] || PALETTES['クラシック'];
   segs.forEach((s, i) => { s.defaultColor = s.sheetColor || pal[i % pal.length]; s.color = s.defaultColor; s.sheetSales = s.salesColor; s.sheetOp = s.opColor; });
+  const hasTotal = ['Q', 'Y'].some(g => views[g].values[TOTAL]);
+  const total = hasTotal ? { name: TOTAL, label: '会社全体', subtitle: '', isTotal: true, visible: false, color: '#475569', defaultColor: '#475569', salesColor: null, opColor: null, marginColor: null } : null;
 
-  return { segs, views, periods: [], values: {}, cfg, notes, segTable, found, gran: 'Q' };
+  return { segs, total, views, periods: [], values: {}, cfg, notes, segTable, found, gran: 'Q' };
 }
 
 /* =========================================================
@@ -559,7 +594,12 @@ function parseCur(v) {
   if (CUR_ALIAS[k] || CUR_ALIAS[t]) return { code: CUR_ALIAS[k] || CUR_ALIAS[t] };
   return { code: 'custom', label: t };
 }
-function parseUnit(v) { const k = half(v).trim().toLowerCase().replace(/\s/g, ''); return UNIT_ALIAS[k] ?? null; }
+function parseUnit(v) {
+  let k = half(v).trim().toLowerCase().replace(/\s/g, '').replace(/[（(].*?[)）]/g, '');
+  if (UNIT_ALIAS[k] != null) return UNIT_ALIAS[k];
+  const m = k.match(/^(百万|十億|億|兆|千)/);  // 「億円」「億（現地通貨）」なども単位部分だけ見る
+  return m ? UNIT_ALIAS[m[1]] : null;
+}
 function fxRate() { return dispCurCode() !== O.cur ? (O.fx > 0 ? O.fx : null) : 1; }
 function maxRaw() {
   let m = 0;
@@ -584,10 +624,15 @@ function applyConfig(cfg) {
   const g = (...ks) => { for (const k of ks) { const v = cfg[normH(k)]; if (v != null && v !== '') return v; } return null; };
   let v;
   if ((v = g('タイトル','title')) != null) O.title = v;
-  if ((v = g('企業名','会社名','社名','company')) != null) O.company = v;
+  if ((v = g('企業名','会社名','社名','company','companyname')) != null) O.company = v;
+  if ((v = g('会社サブタイトル','companysubtitle')) != null) O.title = '{企業名}　' + v;
+  if ((v = g('売上高の色','売上の色','revenuecolor','salescolor')) != null && normColor(v)) O.totalSales = normColor(v);
+  if ((v = g('営業利益の色','利益の色','operatingprofitcolor','opcolor')) != null && normColor(v)) O.totalOp = normColor(v);
+  if ((v = g('会社全体の表示名','会社全体名','totallabel')) != null) O.totalLabel = v;
+  if ((v = g('会社全体を表示','会社全体','showtotal')) != null) O.showTotal = !/^(false|0|off|no|しない|なし|いいえ|非表示)$/i.test(v);
   if ((v = g('注記','出所','出典','脚注','note','source')) != null) O.note = v;
-  if ((v = g('通貨','データの通貨','currency')) != null) { const c = parseCur(v); if (c) { O.cur = c.code; if (c.label) O.curCustom = c.label; } }
-  if ((v = g('データの単位','元データの単位','データ単位','元データ単位','入力単位','dataunit')) != null && parseUnit(v) != null) O.dataUnit = parseUnit(v);
+  if ((v = g('通貨','データの通貨','入力通貨','currency','inputcurrency')) != null) { const c = parseCur(v); if (c) { O.cur = c.code; if (c.label) O.curCustom = c.label; } }
+  if ((v = g('データの単位','元データの単位','データ単位','元データ単位','入力単位','dataunit','inputunit')) != null && parseUnit(v) != null) O.dataUnit = parseUnit(v);
   if ((v = g('表示単位','表示の単位','displayunit')) != null) { if (/自動|auto/i.test(v)) O.dispUnit = 'auto'; else if (parseUnit(v) != null) O.dispUnit = String(parseUnit(v)); }
   if ((v = g('表示通貨','表示の通貨','displaycurrency')) != null) { const c = parseCur(v); if (c && c.code !== 'custom') O.dispCur = c.code; }
   if ((v = g('換算レート','為替レート','レート','fx','rate')) != null && num(v) > 0) O.fx = num(v);
@@ -629,13 +674,14 @@ function ingest(tables, source) {
   M = model; SOURCE = source;
   O.title = ''; O.company = ''; O.note = ''; O.yMax = null; O.rMax = null;
   Object.assign(O, { cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null });
-  O.nByG = {}; O.granPref = null; O.fillGaps = true;
+  O.nByG = {}; O.granPref = null; O.fillGaps = true; O.totalSales = null; O.totalOp = null; O.totalLabel = '会社全体'; O.showTotal = false;
   applyConfig(M.cfg);
+  if (M.total) { M.total.label = O.totalLabel || '会社全体'; M.total.visible = !!O.showTotal; M.total.salesColor = O.totalSales; M.total.opColor = O.totalOp; M.total.sheetSales = O.totalSales; M.total.sheetOp = O.totalOp; if (O.totalOp) { M.total.color = M.total.defaultColor = O.totalOp; } }
   const hasQ = M.views.Q.periods.length > 0, hasY = M.views.Y.periods.length > 0;
   setGran(O.granPref === 'Y' && hasY ? 'Y' : O.granPref === 'Q' && hasQ ? 'Q' : hasQ ? 'Q' : 'Y', true);
   renderSegList();
   const span = g => { const ps = M.views[g].periods; if (!ps.length) return ''; return `${ps.length}${g === 'Q' ? '四半期' : '年度'}（${esc(plab(ps[0]))} 〜 ${esc(plab(ps[ps.length - 1]))}）`; };
-  setStatus(`<b>${M.segs.length}セグメント</b> を読み込みました<br>` + [span('Q'), span('Y')].filter(Boolean).join('・') +
+  setStatus(`<b>${M.segs.length}セグメント</b>${M.total ? '＋会社全体' : ''} を読み込みました<br>` + [span('Q'), span('Y')].filter(Boolean).join('・') +
     (M.notes.length ? `<br><span style="color:#b45309">⚠ ${M.notes.map(esc).join('<br>⚠ ')}</span>` : ''));
   render();
   return true;
@@ -644,7 +690,13 @@ function ingest(tables, source) {
 /* 四半期 / 年度 の切り替え */
 function setGran(g, silent) {
   if (!M || !M.views[g] || !M.views[g].periods.length) return;
-  M.gran = g; M.periods = O.fillGaps ? fillGaps(M.views[g].periods, g) : M.views[g].periods; M.values = M.views[g].values;
+  M.gran = g; M.values = M.views[g].values;
+  // 表示する系列（セグメント＋表示中なら会社全体）にデータがある期だけを使う
+  const names = M.segs.map(s => s.name).concat(M.total && M.total.visible ? [TOTAL] : []);
+  const keys = new Set(); names.forEach(n => Object.keys(M.values[n] || {}).forEach(k => keys.add(+k)));
+  let ps = M.views[g].periods.filter(p => keys.has(p.key));
+  if (!ps.length) ps = M.views[g].periods;
+  M.periods = O.fillGaps ? fillGaps(ps, g) : ps;
   const L = M.periods.length;
   O.endIdx = L - 1;
   O.nQ = clamp(Math.round((O.nByG && O.nByG[g]) || 30), Math.min(3, L), L);
@@ -740,7 +792,8 @@ function render() {
   const host = $('#chart');
   if (!M) return;
   $('#tip').style.opacity = 0;
-  const segs = M.segs.filter(s => s.visible);
+  const hasTot = !!(M.total && M.total.visible && M.values[TOTAL]);
+  const segs = [...(hasTot ? [M.total] : []), ...M.segs.filter(s => s.visible)];
   const per = visiblePeriods();
   $('#footL').textContent = M ? `${segs.length}セグメント・${per.length}${granWord()}を表示中` : '';
   if (!segs.length || !per.length) { host.innerHTML = '<div class="empty">表示するセグメントを選んでください</div>'; return; }
@@ -793,7 +846,9 @@ function render() {
   const plotH = plotBot - plotTop;
   if (O.legend === 'bottom') legendPos = { x: (W - legW) / 2, y: HH - 14 - noteH };
   const gap = n <= 2 ? 34 : n <= 4 ? 22 : 16;
-  const pw = (W - padL - padR - gap * (n - 1)) / n;
+  const totGap = hasTot && n > 1 ? gap + 18 : 0;   // 会社全体とセグメントの間を少し広げる
+  const pw = (W - padL - padR - gap * (n - 1) - totGap) / n;
+  const pxOf = k => padL + k * (pw + gap) + (hasTot && k > 0 ? totGap : 0);
   const band = pw / m, barW = Math.max(1, band * (m > 24 ? 0.82 : 0.76));
   const yL = v => plotTop + (lTop - v) / (lTop - lBot) * plotH;
   const yR = v => plotTop + (rTop - v) / (rTop - rBot) * plotH;
@@ -802,7 +857,7 @@ function render() {
   o.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${Wpx}" height="${Hpx}" viewBox="0 0 ${W.toFixed(2)} ${HH.toFixed(2)}" font-family="${esc(FONT)}" style="font-family:${esc(FONT)}">`);
   o.push(`<rect width="${W}" height="${HH}" fill="#ffffff"/>`);
   o.push('<defs>');
-  segs.forEach((s, k) => { const px = padL + k * (pw + gap); o.push(`<clipPath id="cp${k}"><rect x="${px - 3}" y="${plotTop - 1}" width="${pw + 6}" height="${plotH + 2}"/></clipPath>`); });
+  segs.forEach((s, k) => { const px = pxOf(k); o.push(`<clipPath id="cp${k}"><rect x="${px - 3}" y="${plotTop - 1}" width="${pw + 6}" height="${plotH + 2}"/></clipPath>`); });
   o.push('</defs>');
 
   if (note) o.push(`<text x="16" y="${HH - 6}" font-size="10" fill="#9ca3af">${esc(note)}</text>`);
@@ -848,9 +903,10 @@ function render() {
 
   // パネル
   segs.forEach((s, k) => {
-    const px = padL + k * (pw + gap);
+    const px = pxOf(k);
+    if (s.isTotal && n > 1) { const dx = px + pw + (gap + totGap) / 2; o.push(`<line x1="${dx.toFixed(1)}" x2="${dx.toFixed(1)}" y1="${headTop + 4}" y2="${plotBot + xLabH + yearH - 4}" stroke="#d1d5db" stroke-dasharray="3 4"/>`); }
     const base = s.color, cS = s.salesColor || tint(base), cO = s.opColor || base;
-    const head = shade(base, lum(base) > 0.62 ? 0.35 : 0.1);
+    const head = s.isTotal ? '#1f2937' : shade(base, lum(base) > 0.62 ? 0.35 : 0.1);
     // 見出し
     const fit = (txt, max, min, wt) => {
       const room = pw + gap * 0.6 - 4;
@@ -930,9 +986,16 @@ function render() {
       const qShow = band >= need ? () => true : band * 2 >= need ? p => p.q % 2 === 1 : band * 4 >= need ? p => p.q === 1 : () => false;
       per.forEach((p, i) => { if (qShow(p)) o.push(`<text x="${(px + i * band + band / 2).toFixed(1)}" y="${qy}" font-size="10.5" fill="#6b7280" text-anchor="middle">${p.qlab}</text>`); });
     } else {
-      const wMax = Math.max(...per.map(p => tw(p.qlab, 10))) + 6;
+      let lab = p => p.qlab;
+      let wMax = Math.max(...per.map(p => tw(p.qlab, 10))) + 6;
+      if (wMax > band && per.every(p => p.ann && p.year)) { lab = p => "'" + String(p.year).slice(2); wMax = tw("'00", 10) + 6; }  // 年度が詰まるときは '25 の形に
       stride = Math.max(1, Math.ceil(wMax / band));
-      per.forEach((p, i) => { if ((per.length - 1 - i) % stride === 0) o.push(`<text x="${(px + i * band + band / 2).toFixed(1)}" y="${qy}" font-size="10" fill="#6b7280" text-anchor="middle">${esc(p.qlab)}</text>`); });
+      per.forEach((p, i) => {
+        if ((per.length - 1 - i) % stride) return;
+        const t = lab(p), cx = px + i * band + band / 2, hw = tw(t, 10) / 2;
+        if (cx - hw < px - gap / 2 + 2 || cx + hw > px + pw + gap / 2 - 2) return;  // 隣のグラフにはみ出すラベルは省く
+        o.push(`<text x="${cx.toFixed(1)}" y="${qy}" font-size="10" fill="#6b7280" text-anchor="middle">${esc(t)}</text>`);
+      });
     }
     // X軸：年
     if (hasYears) {
@@ -1069,6 +1132,16 @@ function persistOpt() {
 }
 function renderSegList() {
   const el = $('#segList'); el.innerHTML = '';
+  if (M.total) {
+    const t = M.total, row = document.createElement('div');
+    row.className = 'segrow total' + (t.visible ? '' : ' off');
+    row.innerHTML = `<input type="checkbox" class="vis" ${t.visible ? 'checked' : ''} title="会社全体を左端に表示">
+      <label class="chip" title="色を変更" style="--c:${t.opColor || t.color};--t:${t.salesColor || tint(t.color)}"><input type="color" value="${t.opColor || t.color}"></label>
+      <div class="nm"><div>${esc(t.label)}</div><small>左端に表示（オプション）</small></div><div></div>`;
+    row.querySelector('.vis').onchange = e => { t.visible = O.showTotal = e.target.checked; row.classList.toggle('off', !t.visible); setGran(M.gran); };
+    row.querySelector('input[type=color]').oninput = e => { t.color = e.target.value; t.salesColor = null; t.opColor = null; const chip = row.querySelector('.chip'); chip.style.setProperty('--c', t.color); chip.style.setProperty('--t', tint(t.color)); scheduleRender(); };
+    el.appendChild(row);
+  }
   M.segs.forEach((s, idx) => {
     const row = document.createElement('div');
     row.className = 'segrow' + (s.visible ? '' : ' off');
@@ -1151,7 +1224,7 @@ function bindControls() {
   ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, () => drop.classList.remove('over')));
   drop.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) readFile(f); });
 
-  on('#resetColors', 'click', () => { if (!M) return; M.segs.forEach(s => { s.color = s.defaultColor; s.salesColor = s.sheetSales; s.opColor = s.sheetOp; }); renderSegList(); render(); toast('シートで指定した色に戻しました'); });
+  on('#resetColors', 'click', () => { if (!M) return; [...M.segs, ...(M.total ? [M.total] : [])].forEach(s => { s.color = s.defaultColor; s.salesColor = s.sheetSales; s.opColor = s.sheetOp; }); renderSegList(); render(); toast('シートで指定した色に戻しました'); });
   on('#copyColors', 'click', async () => {
     if (!M) return;
     const tsv = ['セグメント\tサブタイトル\t色\t表示', ...M.segs.map(s => [s.name, s.subtitle, s.color, s.visible ? 'TRUE' : 'FALSE'].join('\t'))].join('\n');
