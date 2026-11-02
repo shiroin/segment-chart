@@ -73,9 +73,8 @@ npm test
 ## デプロイ
 
 - **GitHub Pages**：`main` に push すると https://shiroin.github.io/segment-chart/ に反映（Settings → Pages → main / root）。
-- **Apps Script**：[clasp](https://github.com/google/clasp) を使うと Claude Code から更新できる。
-  1. `npm i -g @google/clasp` → `clasp login`
-  2. Apps Script の「プロジェクトの設定」でスクリプト ID を確認し、`gas/.clasp.json` を作る：`{"scriptId":"<スクリプトID>","rootDir":"."}`
-  3. `npm run build && cd gas && clasp push`
-  4. URL を変えずに公開し直す：`clasp deployments` で ID を確認 → `clasp deploy -i <デプロイID>`
+- **Apps Script**：`gas/Code.gs` の `doGet` が、開かれるたびに GitHub の `gas/index.html`（raw.githubusercontent.com）を取得して表示する（10 分キャッシュ。`…/exec?refresh=1` で即時更新）。
+  - つまり **画面の変更は `npm run build` → `main` に push するだけで Apps Script 版にも反映**される。デプロイ不要。
+  - `gas/Code.gs`（サーバー側）を変えたときだけは、利用者に Apps Script への貼り替えと「デプロイを管理 → 新バージョン」を頼む必要がある。サーバー側の変更はなるべく避ける。
+  - GitHub に届かないときは、Apps Script 内の `index` ファイルを使う（古い版になる）。
 - **Claude 上のアーティファクト**：claude.ai の会話で `src/index.html` を同じアーティファクトに再公開してもらう（Claude Code からは公開できない）。

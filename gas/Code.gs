@@ -26,9 +26,44 @@
 
 const APP_TITLE = 'セグメント業績チャート';
 
+/* 画面（index.html）は GitHub から最新版を取ってくる。
+ * GitHub（shiroin/segment-chart）に保存された変更は、貼り替え・デプロイなしで反映される（最大10分ほどの遅れ）。
+ * すぐに反映したいときは URL の末尾に ?refresh=1 を付けて開く。
+ * GitHub に届かないときは、このプロジェクト内の index.html を使う。 */
+const SOURCE_URL = 'https://raw.githubusercontent.com/shiroin/segment-chart/main/gas/index.html';
+const CACHE_SEC = 600;
+
+function pageHtml_(fresh) {
+  const cache = CacheService.getScriptCache();
+  if (!fresh) {
+    const n = +(cache.get('page_n') || 0);
+    if (n) {
+      const keys = Array.from({ length: n }, (_, i) => 'page_' + i);
+      const got = cache.getAll(keys);
+      if (keys.every(k => got[k] != null)) return keys.map(k => got[k]).join('');
+    }
+  }
+  try {
+    const res = UrlFetchApp.fetch(SOURCE_URL + '?t=' + Date.now(), { muteHttpExceptions: true });
+    const html = res.getResponseCode() === 200 ? res.getContentText('UTF-8') : '';
+    if (html.indexOf('</html>') > 0) {
+      const parts = html.match(/[\s\S]{1,25000}/g);  // キャッシュは1件100KBまでなので分けて保存
+      const obj = { page_n: String(parts.length) };
+      parts.forEach((p, i) => { obj['page_' + i] = p; });
+      try { cache.putAll(obj, CACHE_SEC); } catch (e) {}
+      return html;
+    }
+  } catch (e) {}
+  return HtmlService.createHtmlOutputFromFile('index').getContent();
+}
+function page_(fresh) {
+  return HtmlService.createHtmlOutput(pageHtml_(fresh));
+}
+
 /** ウェブアプリの入口（…/exec?id=スプレッドシートID でそのシートを直接開く） */
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile('index')
+function doGet(e) {
+  const fresh = !!(e && e.parameter && e.parameter.refresh);
+  return page_(fresh)
     .setTitle(APP_TITLE)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
@@ -47,7 +82,7 @@ function onOpen() {
 function showChart() { openDialog_(1280, 820); }
 function showChartLarge() { openDialog_(1800, 1000); }
 function openDialog_(w, h) {
-  const html = HtmlService.createHtmlOutputFromFile('index').setWidth(w).setHeight(h);
+  const html = page_(false).setWidth(w).setHeight(h);
   SpreadsheetApp.getUi().showModelessDialog(html, 'セグメント別業績');
 }
 
