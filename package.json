@@ -1,0 +1,12 @@
+{
+  "name": "segment-chart",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/build.mjs && node tests/run.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}
