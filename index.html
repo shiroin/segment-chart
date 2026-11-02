@@ -1347,6 +1347,13 @@ function loadFromSheet() {
   google.script.run
     .withSuccessHandler(res => {
       if (!res || !res.tables) return;
+      // 企業マスターに入れた場合は「会社比較」へ
+      if (res.isMaster && !res.tables.length) {
+        setTab('cmp'); $('#masterUrl').value = res.url; SHEET_ID = '';
+        setStatus('このスプレッドシートは企業マスターです。会社一覧を読み込みます…');
+        loadMaster(); return;
+      }
+      if (!res.tables.length) { setStatus('このスプレッドシートにはグラフ用のシートが見つかりませんでした。各社の Financials のURLを上の欄に貼るか、「会社比較」タブをお使いください。', true); return; }
       SHEET_ID = res.id || SHEET_ID;
       if (res.url && !$('#sheetUrl').value) $('#sheetUrl').value = res.url;
       try { if (SHEET_ID && google.script.history) google.script.history.replace(null, { id: SHEET_ID }); } catch (e) {}
