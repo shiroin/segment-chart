@@ -79,9 +79,13 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .sw-toggle i:after{content:"";position:absolute;left:3px;top:3px;width:14px;height:14px;background:#fff;border-radius:50%;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .sw-toggle input:checked+i{background:var(--acc)}
 .sw-toggle input:checked+i:after{transform:translateX(14px)}
-.segrow{display:grid;grid-template-columns:18px 30px 1fr auto;align-items:center;gap:8px;padding:6px 6px;border-radius:8px}
+.segrow{display:grid;grid-template-columns:18px 30px 1fr auto auto;align-items:center;gap:8px;padding:6px 6px;border-radius:8px}
 .segrow:hover{background:var(--soft)}
 .segrow.off .nm{opacity:.4}
+.mg{width:26px;height:20px;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;padding:0;position:relative}
+.mg svg{display:block;margin:auto}
+.mg.off{opacity:.45}
+.mg.off:after{content:"";position:absolute;left:3px;right:3px;top:50%;border-top:1.5px solid #6b7280;transform:rotate(-30deg)}
 .segrow.total{border-bottom:1px dashed var(--line);border-radius:8px 8px 0 0;margin-bottom:4px}
 .segrow input[type=checkbox]{accent-color:var(--acc);margin:0}
 .chip{position:relative;width:30px;height:22px;border-radius:6px;overflow:hidden;cursor:pointer;background:linear-gradient(var(--t) 0 50%,var(--c) 50% 100%);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
@@ -200,7 +204,7 @@ body.gas .nogas{display:none!important}
   </section>
 
   <section>
-    <h3>セグメント <span style="font-weight:400;letter-spacing:0">— 色をクリックで変更 / ▲▼で並べ替え</span></h3>
+    <h3>セグメント <span style="font-weight:400;letter-spacing:0">— 色をクリックで変更 / 線のボタンで利益率の表示切替 / ▲▼で並べ替え</span></h3>
     <div id="segList"></div>
     <div class="palettes" id="palettes"></div>
     <div class="btns">
@@ -357,6 +361,7 @@ const H = {
   salesColor: ['売上色','salescolor'],
   opColor:    ['利益色','営業利益色','opcolor'],
   marginColor:['利益率色','利益率の色','margincolor'],
+  marginShow: ['利益率','営業利益率','利益率を表示','利益率の線','showmargin','margin'],
   visible:    ['表示','visible','show'],
 };
 const HN = Object.fromEntries(Object.entries(H).map(([k, v]) => [k, v.map(normH)]));
@@ -552,6 +557,7 @@ function buildModel(tables, paletteName) {
           opColor: pick('opColor'),
           marginColor: pick('marginColor'),
           visible: !/^(false|0|no|off|×|x|いいえ|非表示|なし)$/i.test(vis),
+          showMargin: col('marginShow') < 0 || !/^(false|0|no|off|×|x|いいえ|非表示|なし|しない)$/i.test(String(r[col('marginShow')] ?? '').trim()),
         });
       });
     }
@@ -726,6 +732,10 @@ function ingest(tables, source) {
   Object.assign(O, { cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null });
   O.nByG = {}; O.granPref = null; O.fillGaps = true; O.totalSales = null; O.totalOp = null; O.totalLabel = '会社全体'; O.showTotal = false;
   applyConfig(M.cfg);
+  // 画面で利益率の線を消したセグメント・会社は、読み込み直しても消したままにする
+  O.marginOff = O.marginOff || {};
+  M.segs.forEach(s => { if (s.showMargin === undefined) s.showMargin = true; if (O.marginOff[s.name]) s.showMargin = false; });
+  if (M.total) M.total.showMargin = !O.marginOff[TOTAL];
   if (M.total) { M.total.label = O.totalLabel || '会社全体'; M.total.visible = !!O.showTotal; M.total.salesColor = O.totalSales; M.total.opColor = O.totalOp; M.total.sheetSales = O.totalSales; M.total.sheetOp = O.totalOp; if (O.totalOp) { M.total.color = M.total.defaultColor = O.totalOp; } }
   const hasQ = M.views.Q.periods.length > 0, hasY = M.views.Y.periods.length > 0;
   setGran(O.granPref === 'Y' && hasY ? 'Y' : O.granPref === 'Q' && hasQ ? 'Q' : hasQ ? 'Q' : 'Y', true);
@@ -853,7 +863,7 @@ function render() {
   // 文字・余白をサイズに比例させる（基準 1000×540）
   const F = clamp(Math.sqrt(Wpx * Hpx / (1000 * 540)), 0.62, 1.7);
   const W = Wpx / F, HH = Hpx / F;
-  const showM = O.showMargin;
+  const showM = O.showMargin && [...(M.total && M.total.visible ? [M.total] : []), ...M.segs.filter(s => s.visible)].some(s => s.showMargin !== false);
   const n = segs.length, m = per.length;
   const K = scaleK();
   const get = (s, p) => { const v = (M.values[s.name] || {})[p.key]; return v ? { sales: v.sales == null ? null : v.sales * K, op: v.op == null ? null : v.op * K } : null; };
@@ -862,7 +872,7 @@ function render() {
   segs.forEach(s => per.forEach(p => {
     const v = get(s, p); if (!v) return;
     [v.sales, v.op].forEach(x => { if (x != null) { lmax = Math.max(lmax, x); lmin = Math.min(lmin, x); } });
-    const g = margin(v); if (g != null) { rmax = Math.max(rmax, g); rmin = Math.min(rmin, g); }
+    const g = s.showMargin === false ? null : margin(v); if (g != null) { rmax = Math.max(rmax, g); rmin = Math.min(rmin, g); }
   }));
   const ax = axes(lmax, lmin, rmax, rmin, showM);
   // 目盛りを「会社（セグメント）ごと」にする場合：目盛りの本数は共通のまま、各グラフの刻み幅だけ変える
@@ -1016,7 +1026,7 @@ function render() {
       }
     }
     // 利益率の線
-    if (showM) {
+    if (showM && s.showMargin !== false) {
       const lc = s.marginColor || mc;
       let d = '', dg = '', last = null, prevI = -9, prev = null;
       const pts = [];
@@ -1195,6 +1205,19 @@ function bindResize() {
 function persistOpt() {
   store.save({ opt: { legend: O.legend, showMargin: O.showMargin, showLast: O.showLast, showLastBar: O.showLastBar, marginColor: O.marginColor, height: O.height, ratio: O.ratio, rw: O.rw, rh: O.rh, pw: O.pw, ph: O.ph } });
 }
+/* 利益率の線のオン／オフボタン（セグメント・会社ごと） */
+const mgBtn = s => `<button class="mg${s.showMargin === false ? ' off' : ''}" title="営業利益率の線を${s.showMargin === false ? '表示する' : '消す'}"><svg width="18" height="12" viewBox="0 0 18 12"><path d="M1 9 L6 5 L11 7 L17 2" fill="none" stroke="${esc(O.marginColor)}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+function bindMg(row, s) {
+  const b = row.querySelector('.mg');
+  b.onclick = () => {
+    s.showMargin = s.showMargin === false;
+    O.marginOff = O.marginOff || {};
+    if (s.showMargin) delete O.marginOff[s.name]; else O.marginOff[s.name] = true;
+    b.classList.toggle('off', !s.showMargin);
+    b.title = '営業利益率の線を' + (s.showMargin ? '消す' : '表示する');
+    render();
+  };
+}
 function renderSegList() {
   const el = $('#segList'); el.innerHTML = '';
   if (M.total) {
@@ -1202,7 +1225,8 @@ function renderSegList() {
     row.className = 'segrow total' + (t.visible ? '' : ' off');
     row.innerHTML = `<input type="checkbox" class="vis" ${t.visible ? 'checked' : ''} title="会社全体を左端に表示">
       <label class="chip" title="色を変更" style="--c:${t.opColor || t.color};--t:${t.salesColor || tint(t.color)}"><input type="color" value="${t.opColor || t.color}"></label>
-      <div class="nm"><div>${esc(t.label)}</div><small>左端に表示（オプション）</small></div><div></div>`;
+      <div class="nm"><div>${esc(t.label)}</div><small>左端に表示（オプション）</small></div>${mgBtn(t)}<div></div>`;
+    bindMg(row, t);
     row.querySelector('.vis').onchange = e => { t.visible = O.showTotal = e.target.checked; row.classList.toggle('off', !t.visible); setGran(M.gran); };
     row.querySelector('input[type=color]').oninput = e => { t.color = e.target.value; t.salesColor = null; t.opColor = null; const chip = row.querySelector('.chip'); chip.style.setProperty('--c', t.color); chip.style.setProperty('--t', tint(t.color)); scheduleRender(); };
     el.appendChild(row);
@@ -1213,8 +1237,10 @@ function renderSegList() {
     row.innerHTML = `<input type="checkbox" class="vis" ${s.visible ? 'checked' : ''} title="表示/非表示">
       <label class="chip" title="色を変更" style="--c:${s.opColor || s.color};--t:${s.salesColor || tint(s.color)}"><input type="color" value="${s.color}"></label>
       <div class="nm"><div title="${esc(s.label)}">${esc(s.label)}</div>${s.subtitle ? `<small>${esc(s.subtitle)}</small>` : ''}</div>
+      ${mgBtn(s)}
       <div class="mv"><button class="up" ${idx === 0 ? 'disabled' : ''} title="上へ">▲</button><button class="dn" ${idx === M.segs.length - 1 ? 'disabled' : ''} title="下へ">▼</button></div>`;
     row.querySelector('.vis').onchange = e => { s.visible = e.target.checked; row.classList.toggle('off', !s.visible); scheduleRender(); };
+    bindMg(row, s);
     row.querySelector('input[type=color]').oninput = e => {
       s.color = e.target.value; s.salesColor = null; s.opColor = null;
       const chip = row.querySelector('.chip'); chip.style.setProperty('--c', s.color); chip.style.setProperty('--t', tint(s.color));
