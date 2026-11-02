@@ -28,10 +28,11 @@ const APP_TITLE = 'セグメント業績チャート';
 
 /* 画面（index.html）は GitHub から最新版を取ってくる。
  * GitHub（shiroin/segment-chart）に保存された変更は、貼り替え・デプロイなしで反映される（最大10分ほどの遅れ）。
+ * 画面右下に「版 日時・GitHubから取得」と出ていれば、この仕組みが働いている。
  * すぐに反映したいときは URL の末尾に ?refresh=1 を付けて開く。
  * GitHub に届かないときは、このプロジェクト内の index.html を使う。 */
 const SOURCE_URL = 'https://raw.githubusercontent.com/shiroin/segment-chart/main/gas/index.html';
-const CACHE_SEC = 600;
+const CACHE_SEC = 300;
 
 function pageHtml_(fresh) {
   const cache = CacheService.getScriptCache();
@@ -40,7 +41,7 @@ function pageHtml_(fresh) {
     if (n) {
       const keys = Array.from({ length: n }, (_, i) => 'page_' + i);
       const got = cache.getAll(keys);
-      if (keys.every(k => got[k] != null)) return keys.map(k => got[k]).join('');
+      if (keys.every(k => got[k] != null)) return keys.map(k => got[k]).join('') + SRC_MARK_('github');
     }
   }
   try {
@@ -51,11 +52,13 @@ function pageHtml_(fresh) {
       const obj = { page_n: String(parts.length) };
       parts.forEach((p, i) => { obj['page_' + i] = p; });
       try { cache.putAll(obj, CACHE_SEC); } catch (e) {}
-      return html;
+      return html + SRC_MARK_('github');
     }
   } catch (e) {}
-  return HtmlService.createHtmlOutputFromFile('index').getContent();
+  return HtmlService.createHtmlOutputFromFile('index').getContent() + SRC_MARK_('local');
 }
+// 画面の右下に「どこから取得した画面か」を出すための目印
+function SRC_MARK_(src) { return '<script>window.__PAGE_SRC=' + JSON.stringify(src) + ';<' + '/script>'; }
 function page_(fresh) {
   return HtmlService.createHtmlOutput(pageHtml_(fresh));
 }

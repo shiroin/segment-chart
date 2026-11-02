@@ -4,7 +4,8 @@
 // Claude 上のアーティファクト版は src/index.html をそのまま公開する。
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const src = readFileSync(new URL('../src/index.html', import.meta.url), 'utf8');
+const stamp = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');  // 日本時間
+const src = readFileSync(new URL('../src/index.html', import.meta.url), 'utf8').replace('__BUILD__', stamp);
 
 // Apps Script（HtmlService）で壊れる書き方を検出する
 const problems = [];

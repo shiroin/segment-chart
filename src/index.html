@@ -279,7 +279,7 @@ body.gas .nogas{display:none!important}
 
 <main class="main">
   <div class="card"><div id="chart"><div class="empty">データを読み込んでください</div></div></div>
-  <div class="foot"><span id="footL"></span><span>グラフにカーソルを合わせると数値を表示</span></div>
+  <div class="foot"><span id="footL"></span><span>グラフにカーソルを合わせると数値を表示　<span id="ver" style="color:#9ca3af"></span></span></div>
 </main>
 </div>
 <div id="tip"></div>
@@ -1964,6 +1964,13 @@ function bindCompare() {
    起動
    ========================================================= */
 (function init() { try {
+  // 版の表示（build 時に日時が入る。Apps Script 版は取得元も出す）
+  const BUILD = '__BUILD__';
+  const showVer = () => {   // Apps Script が後ろに付ける目印（__PAGE_SRC）はページの最後で読まれるので、読み込み後に表示する
+    const src = window.__PAGE_SRC === 'github' ? '・GitHubから取得' : window.__PAGE_SRC === 'local' ? '・Apps Script内の古いindex（Code.gsを更新してください）' : IS_GAS ? '・取得元不明（Code.gsが古い可能性）' : '';
+    $('#ver').textContent = (BUILD.indexOf('BUILD') < 0 ? '版 ' + BUILD : '') + src;
+  };
+  showVer(); window.addEventListener('load', showVer); setTimeout(showVer, 500);
   if (IS_GAS) document.body.classList.add('gas');
   if (IS_WEB) document.body.classList.add('web');
   const st = store.load();
