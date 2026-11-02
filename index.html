@@ -4,6 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>セグメント業績チャート</title>
+<script>
+/* どこかでエラーが起きたら、画面の「データ」欄に赤字で表示する（原因調査用） */
+(function () {
+  function show(msg) {
+    var el = document.getElementById('status');
+    if (!el) { setTimeout(function () { show(msg); }, 200); return; }
+    el.className = 'status err';
+    el.innerHTML = 'プログラムのエラー：' + String(msg).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }) + '<br><small>この赤い文字をそのまま Claude に送ってください</small>';
+  }
+  window.addEventListener('error', function (e) { show((e.message || e.type) + (e.lineno ? '（' + e.lineno + '行目 ' + e.colno + '文字目）' : '')); });
+  window.addEventListener('unhandledrejection', function (e) { var r = e.reason; show(r && (r.message || r.code) || String(r)); });
+  window.__showErr = show;
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -1860,7 +1874,7 @@ function bindCompare() {
 /* =========================================================
    起動
    ========================================================= */
-(function init() {
+(function init() { try {
   if (IS_GAS) document.body.classList.add('gas');
   if (IS_WEB) document.body.classList.add('web');
   const st = store.load();
@@ -1883,7 +1897,7 @@ function bindCompare() {
     else { setTab(st.tab === 'file' ? 'file' : st.tab === 'sample' ? 'sample' : 'sheet'); loadSample(); }
   }
   (async () => { try { if (window.claude && claude.use) dlApi = await claude.use('downloads'); } catch (e) { dlApi = null; } })();
-})();
+} catch (e) { window.__showErr && window.__showErr((e && e.stack) || e); } })();
 </script>
 </body>
 </html>
