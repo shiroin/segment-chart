@@ -162,6 +162,11 @@ body.gas .nogas{display:none!important}
         </div>
         <div id="cmpList" class="cmplist"></div>
         <div id="cmpSel" class="cmpsel"></div>
+        <div class="field"><span>時期のそろえ方</span><select id="cmpAlign" style="width:150px">
+          <option value="cal">暦年の四半期にそろえる</option>
+          <option value="latest">最新期を右端にそろえる</option>
+          <option value="fy">各社のFY表記のまま</option>
+        </select></div>
         <div class="field"><span>比較する通貨</span><select id="cmpCur"></select></div>
         <div id="cmpFx"></div>
         <button class="btn primary full" id="cmpGo" style="margin-top:6px">選んだ会社を比較する</button>
@@ -786,8 +791,9 @@ function axes(lmax, lmin, rmax, rmin, showM) {
   }
   if (!best) { const k = 5; best = { k, ls: fL ? fL / k : niceUp(lmax / k), rs: fR ? fR / k : niceUp(rmax / k) }; }
   const { k, ls, rs } = best;
-  let kn = Math.max(0, Math.ceil(-lmin / ls - 1e-9));
-  if (showM && rmin < 0) kn = Math.max(kn, Math.ceil(Math.min(-rmin, rs * k) / rs - 1e-9));
+  // マイナス側は必要なぶんだけ（目盛り1段の 1/4 刻み）空ける。目盛りの数字は整数段にだけ付ける
+  const need = Math.max(lmin < 0 ? -lmin / ls : 0, showM && rmin < 0 ? Math.min(-rmin, rs * k) / rs : 0);
+  const kn = need > 0 ? Math.ceil(need * 1.06 * 4 - 1e-9) / 4 : 0;
   return { kp: k, kn, ls, rs };
 }
 
@@ -936,7 +942,7 @@ function render() {
   }
 
   // 左軸
-  if (!each) for (let i = -ax.kn; i <= ax.kp; i++) {
+  if (!each) for (let i = -Math.floor(ax.kn); i <= ax.kp; i++) {
     const v = i * ax.ls + 0;
     o.push(`<text x="${padL - 10}" y="${yL(v) + 4}" font-size="11" fill="#6b7280" text-anchor="end">${fmtN(v, ax.ls)}</text>`);
   }
@@ -946,7 +952,7 @@ function render() {
   // 右軸
   if (showM) {
     const rc = mix(mc, '#6b7280', 0.25);
-    for (let i = -ax.kn; i <= ax.kp; i++) {
+    for (let i = -Math.floor(ax.kn); i <= ax.kp; i++) {
       const v = i * ax.rs + 0;
       o.push(`<text x="${W - padR + 10}" y="${yR(v) + 4}" font-size="11" fill="${rc}">${fmtP(v, ax.rs)}</text>`);
     }
@@ -978,9 +984,9 @@ function render() {
     const lsK = each ? axE[k] : ax.ls;
     if (each) {
       yL = v => plotTop + (ax.kp * lsK - v) / ((ax.kp + ax.kn) * lsK) * plotH;
-      for (let i = -ax.kn; i <= ax.kp; i++) o.push(`<text x="${(px - 6).toFixed(1)}" y="${(yL(i * lsK) + 3.5).toFixed(1)}" font-size="10" fill="#6b7280" text-anchor="end">${fmtN(i * lsK + 0, lsK)}</text>`);
+      for (let i = -Math.floor(ax.kn); i <= ax.kp; i++) o.push(`<text x="${(px - 6).toFixed(1)}" y="${(yL(i * lsK) + 3.5).toFixed(1)}" font-size="10" fill="#6b7280" text-anchor="end">${fmtN(i * lsK + 0, lsK)}</text>`);
     }
-    for (let i = -ax.kn; i <= ax.kp; i++) {
+    for (let i = -Math.floor(ax.kn); i <= ax.kp; i++) {
       const yy = yL(i * lsK).toFixed(1);
       o.push(`<line x1="${px}" x2="${px + pw}" y1="${yy}" y2="${yy}" stroke="${i === 0 ? '#9ca3af' : '#eceef1'}" stroke-width="1"/>`);
     }
@@ -1096,7 +1102,7 @@ function bindHover() {
     const yoy = (a, b) => (a != null && b != null && b !== 0) ? ((a / b - 1) * 100 >= 0 ? '+' : '') + ((a / b - 1) * 100).toFixed(1) + '%' : '';
     const f = fmtV;
     const g = margin(v);
-    tip.innerHTML = `<div class="h"><i style="background:${s.color}"></i>${esc(s.label)}</div><div class="p">${esc(plab(p))}　<span style="opacity:.7">単位: ${esc(unitText())}</span>${prev ? `　<span style="opacity:.7">${p.ann ? '前年比' : '前年同期比'}</span>` : ''}</div>
+    tip.innerHTML = `<div class="h"><i style="background:${s.color}"></i>${esc(s.label)}</div><div class="p">${esc(plab(p))}${SOURCE === 'compare' && CMP.orig[s.label] && CMP.orig[s.label][p.key] ? `<br><span style="opacity:.8">${esc(CMP.orig[s.label][p.key])}</span>` : ''}　<span style="opacity:.7">単位: ${esc(unitText())}</span>${prev ? `　<span style="opacity:.7">${p.ann ? '前年比' : '前年同期比'}</span>` : ''}</div>
       <table><tr><td>売上</td><td>${f(v && v.sales)}</td><td>${prev ? yoy(v && v.sales, prev.sales) : ''}</td></tr>
       <tr><td>営業利益</td><td>${f(v && v.op)}</td><td>${prev ? yoy(v && v.op, prev.op) : ''}</td></tr>
       <tr><td>営業利益率</td><td>${g == null ? '–' : (g * 100).toFixed(1) + '%'}</td><td>${prev && g != null && margin(prev) != null ? ((g - margin(prev)) * 100 >= 0 ? '+' : '') + ((g - margin(prev)) * 100).toFixed(1) + 'pt' : ''}</td></tr></table>`;
@@ -1695,7 +1701,7 @@ async function downloadTemplate() {
 const DEFAULT_MASTER = 'https://docs.google.com/spreadsheets/d/1NMjMQ6JeUuRRyy4X7m79YCTnklUgkdE76407QYY5ahQ/edit';
 // 1通貨あたりの円（2026年8月末ごろの目安。画面で書き換え可）
 const FX_JPY = { JPY: 1, USD: 160, EUR: 185.5, CNY: 23.5, TWD: 5.0, HKD: 20.4, KRW: 0.104, DKK: 24.8, SEK: 16.7, NOK: 17.0, CHF: 197.9, GBP: 216.8, SGD: 125.6, AUD: 114.7, CAD: 115.1, INR: 1.69 };
-const CMP = { companies: [], sel: [], raw: {}, fx: Object.assign({}, FX_JPY), cur: 'JPY' };
+const CMP = { companies: [], sel: [], raw: {}, fx: Object.assign({}, FX_JPY), cur: 'JPY', align: 'cal', orig: {} };
 
 /* シートの値を読む（Apps Script 版 / Claude 版で取得経路が違う） */
 async function readRanges(id, ranges) {
@@ -1800,7 +1806,9 @@ async function fetchCompany(c) {
     return rows.slice(hi + 1).filter(r => String(r[pi] ?? '').trim()).map(r => [String(r[pi]).trim(), si >= 0 ? num(r[si]) : null, oi >= 0 ? num(r[oi]) : null]);
   };
   const curP = parseCur(cfg.input_currency || '') || parseCur(c.cur || '') || { code: 'JPY' };
-  const raw = { cur: curP.code === 'custom' ? 'JPY' : curP.code, name: cfg.company_name || '', Q: pick(got[R.Q]), Y: pick(got[R.Y]) };
+  const monthOf = t => { const m = half(t || '').match(/(\d{1,2})\s*月/); return m && +m[1] >= 1 && +m[1] <= 12 ? +m[1] : null; };
+  const raw = { cur: curP.code === 'custom' ? 'JPY' : curP.code, name: cfg.company_name || '', Q: pick(got[R.Q]), Y: pick(got[R.Y]),
+    fyMonth: monthOf(c.fy) || monthOf(cfg.note) || null };
   CMP.raw[c.id] = raw;
   return raw;
 }
@@ -1830,8 +1838,44 @@ async function runCompare() {
   } catch (e) { setStatus(e && e.code ? mcpErrMsg(e) : '読み込みに失敗しました: ' + esc(e && e.message || e), true); }
   finally { btn.disabled = false; renderCmpSel(); }
 }
+/* ---------- 時期をそろえる ----------
+   FY の名前は「その年度が終わる年」（例：NVIDIA の FY2027 = 2026年2月〜2027年1月、GMO-PG の FY2025 = 2024年10月〜2025年9月）。
+   月は「年×12＋(月−1)」の通し番号で扱う。各四半期・年度は、期間の真ん中の月が入る暦の四半期・暦年に割り当てる。 */
+const monthRange = (end, len) => {
+  const a = end - len + 1, ya = Math.floor(a / 12), ma = a % 12 + 1, yb = Math.floor(end / 12), mb = end % 12 + 1;
+  return ya === yb ? `${ya}年${ma}-${mb}月` : `${ya}年${ma}月-${yb}年${mb}月`;
+};
+function alignCompany(r, mode) {
+  const fyM = r.fyMonth || 12;
+  const conv = (rows, gran) => rows.map(([p, sa, op]) => {
+    const pq = parsePeriod(p), py = pq ? null : parseYear(p);
+    if (!pq && !py) return null;
+    const fyEnd = (pq || py).year * 12 + (fyM - 1);
+    const end = pq ? fyEnd - 3 * (4 - pq.q) : fyEnd;
+    return { p, sa, op, end, len: pq ? 3 : 12, gran: pq ? 'Q' : 'Y', fyLab: pq ? `${(pq.ylab || pq.year)} ${pq.qlab}` : py.qlab };
+  }).filter(Boolean);
+  const list = [...conv(r.Q), ...conv(r.Y)];
+  // 年度名の付け方が「始まる年」だった場合、最新期が未来になる → 1年戻す
+  const now = new Date(), nowIdx = now.getFullYear() * 12 + now.getMonth();
+  const latest = Math.max(...list.map(x => x.end));
+  const shift = latest > nowIdx + 1 ? -12 : 0;
+  list.forEach(x => {
+    x.end += shift;
+    const mid = x.end - (x.len === 3 ? 1 : 6);
+    x.cy = Math.floor(mid / 12); x.cq = Math.floor((mid % 12) / 3) + 1;
+    x.range = monthRange(x.end, x.len);
+  });
+  return list;
+}
 function buildCompare() {
   const ok = CMP.loaded || []; if (!ok.length) return;
+  const mode = CMP.align || 'cal';
+  CMP.orig = {};
+  const aligned = ok.map(({ r }) => alignCompany(r, mode));
+  // 「最新期を右端に」：各社の最新の暦四半期（年度）を、全社で最も新しいものに合わせてずらす
+  const lastQ = list => Math.max(-1, ...list.filter(x => x.gran === 'Q').map(x => x.cy * 4 + x.cq - 1));
+  const lastY = list => Math.max(-1, ...list.filter(x => x.gran === 'Y').map(x => x.cy));
+  const gQ = Math.max(...aligned.map(lastQ)), gY = Math.max(...aligned.map(lastY));
   const t = CMP.cur, pal = PALETTES[O.cmpPalette] || PALETTES['モダン'];
   const rows = [['セグメント', '期', '売上', '営業利益']];
   const segRows = [['セグメント', 'サブタイトル', '色']];
@@ -1839,12 +1883,30 @@ function buildCompare() {
   ok.forEach(({ c, r }, i) => {
     let label = cmpName(c); while (used.includes(label)) label += '＊'; used.push(label);
     const f = (CMP.fx[r.cur] || 1) / (CMP.fx[t] || 1);
-    [...r.Q, ...r.Y].forEach(([p, sa, op]) => rows.push([label, p, sa == null ? '' : sa * f, op == null ? '' : op * f]));
-    segRows.push([label, [c.tk, c.fy ? c.fy + '決算' : '', r.cur].filter(Boolean).join('・'), pal[i % pal.length]]);
+    const val = v => v == null ? '' : v * f;
+    if (mode === 'fy') {
+      [...r.Q, ...r.Y].forEach(([p, sa, op]) => rows.push([label, p, val(sa), val(op)]));
+    } else {
+      const list = aligned[i], dq = mode === 'latest' ? gQ - lastQ(list) : 0, dy = mode === 'latest' ? gY - lastY(list) : 0;
+      const om = CMP.orig[label] = {};
+      list.forEach(x => {
+        let per;
+        if (x.gran === 'Q') { const qi = x.cy * 4 + x.cq - 1 + dq; per = `${Math.floor(qi / 4)} ${qi % 4 + 1}Q`; }
+        else per = `${x.cy + dy}年`;
+        const pk = (parsePeriod(per) || parseYear(per)).key;
+        om[pk] = `${x.fyLab}（${x.range}）`;
+        rows.push([label, per, val(x.sa), val(x.op)]);
+      });
+    }
+    segRows.push([label, [c.tk, r.fyMonth ? r.fyMonth + '月決算' : '', r.cur].filter(Boolean).join('・'), pal[i % pal.length]]);
   });
   const convs = [...new Set(ok.map(x => x.r.cur))].filter(c => c !== t).map(c => { const f = CMP.fx[c] / CMP.fx[t]; return f >= 1 ? `1${curLabel(c)}=${+f.toPrecision(4)}${curLabel(t)}` : `1${curLabel(t)}=${+(1 / f).toPrecision(4)}${curLabel(c)}`; });
+  const unknownFy = ok.filter(x => !x.r.fyMonth).map(x => cmpName(x.c));
+  const alignNote = mode === 'cal' ? '横軸は暦年の四半期（1Q＝1-3月）・暦年に換算' + (unknownFy.length ? `（${unknownFy.join('・')}は決算月が不明なため12月決算として換算）` : '')
+    : mode === 'latest' ? '各社の最新期を右端にそろえて表示（横軸は最も新しい会社の暦四半期）'
+    : 'FYは各社の会計年度（決算月が異なる会社はずれがあります）';
   const cfg = [['項目', '値'], ['タイトル', '全社業績の比較（{区分}）'], ['通貨', t], ['データの単位', '百万'], ['表示単位', '億'],
-    ['注記', (convs.length ? '換算：' + convs.join('、') + '。' : '') + 'FYは各社の会計年度（決算月が異なる会社はずれがあります）']];
+    ['注記', (convs.length ? '換算：' + convs.join('、') + '。' : '') + alignNote]];
   const keepGran = M && M.gran, keepAxis = O.axisMode;
   if (ingest([{ name: 'compare', rows }, { name: 'segments', rows: segRows }, { name: 'config', rows: cfg }], 'compare')) {
     O.axisMode = keepAxis;
@@ -1866,6 +1928,7 @@ function bindCompare() {
   $('#cmpList').onchange = e => { const id = e.target.dataset.id; if (!id) return; CMP.sel = e.target.checked ? [...CMP.sel, id] : CMP.sel.filter(x => x !== id); renderCmpSel(); };
   $('#cmpSel').onclick = e => { const id = e.target.dataset && e.target.dataset.id; if (!id) return; CMP.sel = CMP.sel.filter(x => x !== id); renderCmpSel(); renderCmpList(); };
   $('#cmpGo').onclick = runCompare;
+  $('#cmpAlign').onchange = e => { CMP.align = e.target.value; buildCompare(); };
   $('#cmpCur').onchange = e => { CMP.cur = e.target.value; CMP.userCur = true; renderFx([...new Set((CMP.loaded || []).map(x => x.r.cur))]); buildCompare(); };
   $('#cmpFx').oninput = e => { const c = e.target.dataset.c; const v = num(e.target.value); if (!c || !(v > 0)) return; CMP.fx[c] = v * CMP.fx[CMP.cur]; clearTimeout(bindCompare._t); bindCompare._t = setTimeout(buildCompare, 300); };
   renderFx([]);
