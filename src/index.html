@@ -265,6 +265,9 @@ body.gas .nogas{display:none!important}
     <div class="field"><span>売上・利益の目盛り</span><select id="oAxisMode"><option value="shared">全グラフ共通</option><option value="each">グラフごと</option></select></div>
     <div class="field"><span>左軸の最大値</span><input type="number" id="oYMax" placeholder="自動"></div>
     <div class="field"><span>右軸の最大値（%）</span><input type="number" id="oRMax" placeholder="自動"></div>
+    <div class="field"><span>左軸の最小値</span><input type="number" id="oYMin" placeholder="自動（例 -50）" max="0"></div>
+    <div class="field"><span>右軸の最小値（%）</span><input type="number" id="oRMin" placeholder="自動（例 -20）" max="0"></div>
+    <p class="note" style="margin-top:4px">最小値は 0 以下で指定します。0 と左右の 0 の高さはそろえたまま、下にはみ出す部分は切って表示します（大きな赤字のグラフで全体がつぶれるのを防げます）。左右で違う値を指定したときは深い方に、片方だけのときはその値に合わせます。</p>
   </section>
 
   <section>
@@ -618,7 +621,7 @@ function buildModel(tables, paletteName) {
    ========================================================= */
 const O = {
   title: '', company: '', note: '', unit: '', cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null, legend: 'top', showMargin: true, showLast: true, showLastBar: false,
-  marginColor: '#c0151f', height: 560, ratio: 'fit', rw: 16, rh: 9, pw: 1280, ph: 720, yMax: null, rMax: null, nQ: 20, endIdx: null, fillGaps: true, axisMode: 'shared',
+  marginColor: '#c0151f', height: 560, ratio: 'fit', rw: 16, rh: 9, pw: 1280, ph: 720, yMax: null, rMax: null, yMin: null, rMin: null, nQ: 20, endIdx: null, fillGaps: true, axisMode: 'shared',
 };
 let M = null, SOURCE = '';
 const LS_KEY = 'segchart.v1';
@@ -702,6 +705,12 @@ function applyConfig(cfg) {
     if (x != null && x <= 1.5 && !String(v).includes('%')) x *= 100;
     O.rMax = x || null;
   }
+  if ((v = g('左軸最小','左軸の最小値','ymin')) != null) { const x = num(v); O.yMin = x != null && x <= 0 ? x : null; }
+  if ((v = g('右軸最小','右軸の最小値','rmin')) != null) {
+    let x = num(String(v).replace('%', ''));
+    if (x != null && Math.abs(x) <= 1.5 && !String(v).includes('%')) x *= 100;
+    O.rMin = x != null && x <= 0 ? x : null;
+  }
   if ((v = g('表示四半期数','四半期数','nq','quarters')) != null && num(v)) { O.nByG = O.nByG || {}; O.nByG.Q = num(v); }
   if ((v = g('表示年数','年数','表示年度数','years')) != null && num(v)) { O.nByG = O.nByG || {}; O.nByG.Y = num(v); }
   if ((v = g('抜けた期を空ける','抜けている期を空ける','欠損期','fillgaps')) != null) O.fillGaps = !/^(false|0|off|no|しない|なし|いいえ)$/i.test(v);
@@ -727,7 +736,7 @@ function ingest(tables, source) {
   const model = buildModel(tables, palName);
   if (model.error) { setStatus(model.error, true); return false; }
   M = model; SOURCE = source;
-  O.title = ''; O.company = ''; O.note = ''; O.yMax = null; O.rMax = null;
+  O.title = ''; O.company = ''; O.note = ''; O.yMax = null; O.rMax = null; O.yMin = null; O.rMin = null;
   Object.assign(O, { cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null });
   O.nByG = {}; O.granPref = null; O.fillGaps = true; O.totalSales = null; O.totalOp = null; O.totalLabel = '会社全体'; O.showTotal = false;
   applyConfig(M.cfg);
@@ -802,8 +811,11 @@ function axes(lmax, lmin, rmax, rmin, showM) {
   if (!best) { const k = 5; best = { k, ls: fL ? fL / k : niceUp(lmax / k), rs: fR ? fR / k : niceUp(rmax / k) }; }
   const { k, ls, rs } = best;
   // マイナス側は必要なぶんだけ（目盛り1段の 1/4 刻み）空ける。目盛りの数字は整数段にだけ付ける
-  const need = Math.max(lmin < 0 ? -lmin / ls : 0, showM && rmin < 0 ? Math.min(-rmin, rs * k) / rs : 0);
-  const kn = need > 0 ? Math.ceil(need * 1.06 * 4 - 1e-9) / 4 : 0;
+  // 最小値が指定されていれば、その深さまで（データがもっと下でも切る）
+  const fixL = O.yMin != null ? -O.yMin / ls : null, fixR = showM && O.rMin != null ? -O.rMin / 100 / rs : null;
+  const autoL = lmin < 0 ? Math.ceil(-lmin / ls * 1.06 * 4 - 1e-9) / 4 : 0;
+  const autoR = showM && rmin < 0 ? Math.ceil(Math.min(-rmin, rs * k) / rs * 1.06 * 4 - 1e-9) / 4 : 0;
+  const kn = (fixL != null || fixR != null) ? Math.max(fixL || 0, fixR || 0) : Math.max(autoL, autoR);
   return { kp: k, kn, ls, rs };
 }
 
@@ -1044,10 +1056,12 @@ function render() {
         `<path d="${d}" fill="none" stroke="#ffffff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" opacity=".7"/><path d="${d}" fill="none" stroke="${lc}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>` +
         lone.map(pt => `<circle cx="${pt.cx.toFixed(2)}" cy="${pt.cy.toFixed(2)}" r="2.6" fill="${lc}"/>`).join('') + '</g>');
       if (last && O.showLast) {
-        o.push(`<circle cx="${last.cx}" cy="${last.cy}" r="3.6" fill="#fff" stroke="${lc}" stroke-width="2"/>`);
-        const txt = (last.g * 100).toFixed(1) + '%';
+        // 軸の範囲外（最小値・最大値で切った場合）は、点を描かずにラベルだけ端に寄せ、矢印で範囲外を示す
+        const out = last.cy > plotBot ? 1 : last.cy < plotTop ? -1 : 0;
+        if (!out) o.push(`<circle cx="${last.cx}" cy="${last.cy}" r="3.6" fill="#fff" stroke="${lc}" stroke-width="2"/>`);
+        const txt = (out > 0 ? '\u25bc' : out < 0 ? '\u25b2' : '') + (last.g * 100).toFixed(1) + '%';
         const anchor = last.cx + tw(txt, 11.5, 700) / 2 > px + pw + gap / 2 ? 'end' : 'middle';
-        const ty = last.cy - 9 < plotTop + 10 ? last.cy + 18 : last.cy - 9;
+        const ty = out > 0 ? plotBot - 6 : out < 0 ? plotTop + 14 : (last.cy - 9 < plotTop + 10 ? last.cy + 18 : last.cy - 9);
         o.push(`<text x="${anchor === 'end' ? last.cx + 4 : last.cx}" y="${ty}" font-size="11.5" font-weight="700" fill="${lc}" text-anchor="${anchor}" stroke="#fff" stroke-width="3.5" stroke-linejoin="round" paint-order="stroke">${txt}</text>`);
       }
     }
@@ -1142,6 +1156,7 @@ function syncControls() {
   $('#oMColor').value = O.marginColor; $('#oH').value = O.height; $('#oHv').textContent = O.height;
   syncSize();
   $('#oYMax').value = O.yMax || ''; $('#oRMax').value = O.rMax || '';
+  $('#oYMin').value = O.yMin != null ? O.yMin : ''; $('#oRMin').value = O.rMin != null ? O.rMin : '';
   if (M) {
     document.querySelectorAll('#granTabs button').forEach(b => { const g = b.dataset.g; b.classList.toggle('on', M.gran === g); b.disabled = !M.views[g].periods.length; b.title = b.disabled ? `${g === 'Q' ? '四半期' : '年度'}のシートがありません` : ''; });
     $('#nQlab').textContent = M.gran === 'Y' ? '年数' : '四半期数';
@@ -1292,6 +1307,9 @@ function bindControls() {
   on('#oH', 'input', e => { O.height = +e.target.value; $('#oHv').textContent = O.height; scheduleRender(); persist(); });
   on('#oYMax', 'input', e => { O.yMax = num(e.target.value) || null; scheduleRender(); });
   on('#oRMax', 'input', e => { O.rMax = num(e.target.value) || null; scheduleRender(); });
+  const minVal = v => { const x = num(v); return x != null && x <= 0 ? x : null; };
+  on('#oYMin', 'input', e => { O.yMin = minVal(e.target.value); scheduleRender(); });
+  on('#oRMin', 'input', e => { O.rMin = minVal(e.target.value); scheduleRender(); });
   on('#nQ', 'input', e => { O.nQ = +e.target.value; O.nByG = O.nByG || {}; O.nByG[M.gran] = O.nQ; $('#nQv').textContent = O.nQ; scheduleRender(); });
   on('#oAxisMode', 'change', e => { O.axisMode = e.target.value; CMP.axisChosen = true; render(); });
   on('#oGaps', 'change', e => { O.fillGaps = e.target.checked; if (M) setGran(M.gran); });
