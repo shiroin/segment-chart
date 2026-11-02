@@ -1604,8 +1604,8 @@ function svgString() {
   const svg = $('#chart svg'); if (!svg) return null;
   const c = svg.cloneNode(true);
   c.querySelectorAll('.hov,.hl').forEach(n => n.remove());
-  // 「<」と「?」を続けて書くと Apps Script が特殊な記号と解釈してしまうため、分けて書く
-  return '<' + '?xml version="1.0" encoding="UTF-8"?' + '>\n' + new XMLSerializer().serializeToString(c);
+  // ※ XML宣言は付けない（Apps Script がこの行を壊すため。SVG は宣言なしで問題なく開ける）
+  return new XMLSerializer().serializeToString(c);
 }
 async function toPng(scale) {
   const s = svgString(); if (!s) return null;

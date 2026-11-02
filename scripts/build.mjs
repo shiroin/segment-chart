@@ -18,6 +18,26 @@ const marker = "<script>\n'use strict';";
 if (!src.includes(marker)) { console.error('ビルド中止: メインの <script> の先頭が見つかりません'); process.exit(1); }
 const web = src.replace(marker, "<script>window.SEGCHART_MODE = 'web';</script>\n" + marker);
 
+// Apps Script 版：メインのプログラムを Base64 にして埋め込み、画面側で元に戻して実行する。
+// HtmlService はページを書き出すときにプログラム内の記号を誤って解釈することがあるため（実際に SyntaxError が出た）、
+// 英数字と + / = だけの形にして、中身に一切触らせない。
+const start = src.indexOf(marker) + '<script>\n'.length;
+const end = src.indexOf('</script>', start);
+const code = src.slice(start, end);
+const b64 = Buffer.from(code, 'utf8').toString('base64').replace(/.{1,100}/g, '$&\n');
+const loader = `
+(function () {
+  var b64 = document.getElementById('app-code').textContent.replace(/\\s+/g, '');
+  var bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  try { (0, eval)(new TextDecoder('utf-8').decode(bytes) + '\\n//# sourceURL=segment-chart.js'); }
+  catch (e) { window.__showErr && window.__showErr((e && e.stack) || e); }
+})();
+`;
+const gas = src.slice(0, start - '<script>\n'.length)
+  + `<script type="text/plain" id="app-code">\n${b64}</script>\n<script>${loader}`
+  + src.slice(end);
+
 writeFileSync(new URL('../index.html', import.meta.url), web);
-writeFileSync(new URL('../gas/index.html', import.meta.url), src);
+writeFileSync(new URL('../gas/index.html', import.meta.url), gas);
 console.log('OK: index.html（GitHub Pages 版）と gas/index.html（Apps Script 版）を生成しました');

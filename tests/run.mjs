@@ -99,7 +99,7 @@ console.log('1. サンプル表示（src）');
   ok(await p.evaluate(() => M.gran === 'Y'), '年度に切り替わる');
   await p.evaluate(() => { O.ratio = '9:16'; syncSize(); render(); });
   ok(await p.$('#chart svg') !== null, '縦長でも描ける');
-  ok((await p.evaluate(() => svgString())).startsWith('<' + '?xml'), 'SVG 書き出し');
+  ok((await p.evaluate(() => svgString())).startsWith('<svg'), 'SVG 書き出し');
   await p.screenshot({ path: SHOTS + '1-sample.png' });
   ok(!errs.length, 'エラーなし ' + errs.join(' / '));
   await p.close();
