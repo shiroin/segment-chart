@@ -1371,7 +1371,7 @@ function loadFromSheet() {
       SHEET_ID = res.id || SHEET_ID;
       if (res.url && !$('#sheetUrl').value) $('#sheetUrl').value = res.url;
       try { if (SHEET_ID && google.script.history) google.script.history.replace(null, { id: SHEET_ID }); } catch (e) {}
-      if (ingest(res.tables, 'sheet') && res.name) setStatus($('#status').innerHTML + `<br>📄 ${esc(res.name)}`);
+      if (ingest(res.tables, 'sheet') && res.name) setStatus($('#status').innerHTML + `<br>シート：${esc(res.name)}`);
     })
     .withFailureHandler(e => setStatus(esc(e.message), true))
     .getSheetTables(SHEET_ID);
@@ -1580,7 +1580,7 @@ async function loadViaMcp(id, url) {
     if (!tables.length) { setStatus('シートの値を取得できませんでした。URL と閲覧権限を確認してください。', true); return; }
     if (ingest(tables, 'gsheet')) {
       rememberSheet(id, name, url);
-      setStatus($('#status').innerHTML + (name ? `<br>📄 ${esc(name)}` : '') + (failed.length ? `<br><span style="color:#b45309">⚠ 読めなかったシート: ${failed.map(esc).join('、')}</span>` : ''));
+      setStatus($('#status').innerHTML + (name ? `<br>シート：${esc(name)}` : '') + (failed.length ? `<br><span style="color:#b45309">⚠ 読めなかったシート: ${failed.map(esc).join('、')}</span>` : ''));
     }
   } catch (e) {
     setStatus(mcpErrMsg(e), true);
