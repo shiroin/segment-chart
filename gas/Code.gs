@@ -261,3 +261,12 @@ function getRanges(id, ranges) {
   });
   return out;
 }
+
+/** 診断用：GitHub から画面を取得できるか確認する（エディタで選んで「実行」→ 実行ログを見る）
+ *  「外部サービスへの接続（script.external_request）」の許可がないと、doGet は黙って古い index.html を使う。
+ *  初回はこれを実行すると許可画面が出るので、許可しておく。 */
+function checkGitHub() {
+  const res = UrlFetchApp.fetch(SOURCE_URL + '?t=' + Date.now(), { muteHttpExceptions: true });
+  const html = res.getContentText('UTF-8');
+  Logger.log('HTTP ' + res.getResponseCode() + ' / ' + html.length + '文字 / 末尾に</html>: ' + (html.indexOf('</html>') > 0));
+}
