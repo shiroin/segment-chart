@@ -99,26 +99,64 @@ function openSpreadsheet_(id) {
   return ss;
 }
 
-/** グラフに使うシートの表示値と背景色を返す（クライアント側で列見出しから自動判別）
- *  ・企業マスター（Financials 列がある表）なら isMaster を返し、中身は読まない
- *  ・大きなシートや関係なさそうなシートは読まない（時間切れを防ぐ） */
-function getSheetTables(id) {
+/* ---------- 読み込みの高速化：一度読んだ内容を10分ほど保存しておく（CacheService） ----------
+ * キャッシュは1件100KBまでなので、JSON を分けて保存する。fresh=true のときは保存分を使わずに読み直す。 */
+const DATA_CACHE_SEC = 600;
+function cacheGetJSON_(key) {
+  try {
+    const c = CacheService.getUserCache(), n = +(c.get(key + '_n') || 0);
+    if (!n) return null;
+    const keys = Array.from({ length: n }, (_, i) => key + '_' + i), got = c.getAll(keys);
+    if (!keys.every(k => got[k] != null)) return null;
+    return JSON.parse(keys.map(k => got[k]).join(''));
+  } catch (e) { return null; }
+}
+function cachePutJSON_(key, obj, sec) {
+  try {
+    const s = JSON.stringify(obj);
+    if (s.length > 2000000) return;
+    const parts = s.match(/[\s\S]{1,25000}/g) || [''];
+    const o = {}; o[key + '_n'] = String(parts.length);
+    parts.forEach((p, i) => { o[key + '_' + i] = p; });
+    CacheService.getUserCache().putAll(o, sec || DATA_CACHE_SEC);
+  } catch (e) {}
+}
+function cacheKey_(s) {
+  return 'k' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s)).replace(/=+$/, '');
+}
+
+/** グラフに使うシートの表示値を返す（クライアント側で列見出しから自動判別）
+ *  ・関係ありそうな名前のシートだけ読む。色の指定があるシートだけ背景色も読む
+ *  ・企業マスター（Financials 列がある表）なら isMaster を返し、中身は読まない */
+function getSheetTables(id, fresh) {
+  const key = cacheKey_('tables|' + (id || 'active'));
+  if (!fresh) { const hit = cacheGetJSON_(key); if (hit) return hit; }
   const ss = openSpreadsheet_(id);
   const KNOWN = /設定|config|segments|会社全体|セグメント|売上|利益|data|業績/i;
-  const sheets = ss.getSheets().filter(sh => !sh.isSheetHidden() && sh.getLastRow() > 0 && sh.getLastColumn() > 0);
+  const SKIP = /受注|ARR|出典/i;
+  const COLOR = /設定|config|segments/i;
+  const sheets = ss.getSheets().filter(sh => !sh.isSheetHidden());
+  const known = sheets.filter(sh => KNOWN.test(sh.getName()) && !SKIP.test(sh.getName()));
   let isMaster = false;
-  sheets.forEach(sh => {
-    const head = sh.getRange(1, 1, Math.min(10, sh.getLastRow()), Math.min(sh.getLastColumn(), 60)).getDisplayValues();
-    if (head.some(r => r.some(c => String(c).trim() === 'Financials'))) isMaster = true;
-  });
-  const known = sheets.filter(sh => KNOWN.test(sh.getName()));
-  const use = (known.length ? known : sheets).filter(sh => sh.getLastRow() <= 5000 && sh.getLastColumn() <= 200).slice(0, 20);
-  const tables = isMaster && !known.length ? [] : use.map(sh => {
-    const range = sh.getDataRange();
-    const small = sh.getLastRow() <= 300;
-    return { name: sh.getName(), rows: range.getDisplayValues(), bgs: small ? range.getBackgrounds() : undefined };
-  });
-  return { id: ss.getId(), name: ss.getName(), url: ss.getUrl(), tables: tables, isMaster: isMaster };
+  if (!known.length) {
+    // 関係するシートがないときだけ、先頭の数枚が企業マスターかどうかを見る
+    sheets.slice(0, 3).forEach(sh => {
+      const lr = sh.getLastRow(), lc = sh.getLastColumn();
+      if (!lr || !lc) return;
+      const head = sh.getRange(1, 1, Math.min(10, lr), Math.min(lc, 60)).getDisplayValues();
+      if (head.some(r => r.some(c => String(c).trim() === 'Financials'))) isMaster = true;
+    });
+  }
+  const use = (known.length ? known : (isMaster ? [] : sheets)).slice(0, 20);
+  const tables = use.map(sh => {
+    const lr = sh.getLastRow(), lc = sh.getLastColumn();
+    if (!lr || !lc || lr > 5000 || lc > 200) return null;
+    const range = sh.getRange(1, 1, lr, lc);
+    return { name: sh.getName(), rows: range.getDisplayValues(), bgs: COLOR.test(sh.getName()) && lr <= 300 ? range.getBackgrounds() : undefined };
+  }).filter(Boolean);
+  const out = { id: ss.getId(), name: ss.getName(), url: ss.getUrl(), tables: tables, isMaster: isMaster };
+  cachePutJSON_(key, out);
+  return out;
 }
 
 /** 画面で調整した色・表示・並び順を segments シートに書き戻す */
@@ -247,18 +285,32 @@ function setupSheets() {
 }
 
 /* ---------- 会社比較：企業マスターと各社 Financials を読む ---------- */
-function getSheetTitles(id) {
-  return openSpreadsheet_(id).getSheets().map(sh => sh.getName());
+function getSheetTitles(id, fresh) {
+  const key = cacheKey_('titles|' + id);
+  if (!fresh) { const hit = cacheGetJSON_(key); if (hit) return hit; }
+  const out = openSpreadsheet_(id).getSheets().map(sh => sh.getName());
+  cachePutJSON_(key, out);
+  return out;
 }
-/** ranges（A1表記の配列）ごとに表示値を返す。存在しないシートは null */
-function getRanges(id, ranges) {
+/** ranges（A1表記の配列、例 'シート名'!A1:AZ3000）ごとに表示値を返す。存在しないシートは null。
+ *  範囲はシートの大きさに合わせて切り詰める（大きすぎる指定はエラーになるため）。fresh でなければ10分保存分を使う。 */
+function getRanges(id, ranges, fresh) {
+  const key = cacheKey_('ranges|' + id + '|' + (ranges || []).join('|'));
+  if (!fresh) { const hit = cacheGetJSON_(key); if (hit) return hit; }
   const ss = openSpreadsheet_(id), out = {};
   (ranges || []).forEach(a1 => {
-    // シート名だけ取り出して、そのシートの入力済み範囲を返す（範囲指定がシートより大きいとエラーになるため）
-    const m = String(a1).match(/^'((?:[^']|'')*)'(?:!.*)?$/) || String(a1).match(/^([^!]*)(?:!.*)?$/);
+    const m = String(a1).match(/^'((?:[^']|'')*)'(?:!(.*))?$/) || String(a1).match(/^([^!]*)(?:!(.*))?$/);
     const sh = m ? ss.getSheetByName(m[1].replace(/''/g, "'")) : null;
-    out[a1] = sh && sh.getLastRow() > 0 ? sh.getDataRange().getDisplayValues() : null;
+    if (!sh || !sh.getLastRow() || !sh.getLastColumn()) { out[a1] = null; return; }
+    let rows = sh.getLastRow(), cols = sh.getLastColumn();
+    const r = m[2] && m[2].match(/^[A-Z]+\d+:([A-Z]+)(\d+)$/i);
+    if (r) {
+      const colN = r[1].toUpperCase().split('').reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0);
+      rows = Math.min(rows, +r[2]); cols = Math.min(cols, colN);
+    }
+    out[a1] = sh.getRange(1, 1, rows, cols).getDisplayValues();
   });
+  cachePutJSON_(key, out);
   return out;
 }
 

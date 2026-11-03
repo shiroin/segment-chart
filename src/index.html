@@ -174,6 +174,7 @@ body.gas .nogas{display:none!important}
         <div class="field"><span>比較する通貨</span><select id="cmpCur"></select></div>
         <div id="cmpFx"></div>
         <button class="btn primary full" id="cmpGo" style="margin-top:6px">選んだ会社を比較する</button>
+        <p class="note gas-only" style="margin-top:6px">読み込んだ内容は10分ほど保存して、2回目以降を速くしています。シートを直した直後は <a href="#" id="cmpFresh">最新の内容で読み直す</a></p>
       </div>
     </div>
     <div class="pane" data-pane="paste">
@@ -1394,7 +1395,8 @@ async function readFile(f) {
 /* Apps Script（スプレッドシート内）から読む */
 let SHEET_ID = '';
 const sheetIdFrom = v => { v = String(v || '').trim(); const m = v.match(/\/d\/([a-zA-Z0-9_-]{20,})/); return m ? m[1] : (/^[a-zA-Z0-9_-]{20,}$/.test(v) ? v : ''); };
-function loadFromSheet() {
+function loadFromSheet(fresh) {
+  fresh = !!(fresh && fresh !== false);   // ボタンから呼ばれたとき（イベントが渡る）は最新を読む。起動時はキャッシュを使う
   const typed = $('#sheetUrl').value.trim();
   if (IS_WEB) return loadViaPublished(typed);
   if (typed) {
@@ -1423,7 +1425,7 @@ function loadFromSheet() {
       if (ingest(res.tables, 'sheet') && res.name) setStatus($('#status').innerHTML + `<br>シート：${esc(res.name)}`);
     })
     .withFailureHandler(e => setStatus(esc(e.message), true))
-    .getSheetTables(SHEET_ID);
+    .getSheetTables(SHEET_ID, fresh);
 }
 
 /* ---------- 「ウェブに公開」したスプレッドシートを読む（GitHub Pages 版） ---------- */
@@ -1465,6 +1467,7 @@ async function loadViaPublished(input) {
   } finally { btn.disabled = false; }
 }
 
+const RELEVANT_SHEET = /設定|config|segments|会社全体|セグメント|売上|利益|data|業績/i;
 /* ---------- Claude の Google Sheets 連携（Claude 上で公開したページ用） ---------- */
 const GS = 'Google Sheets';
 let mcpP = null;
@@ -1614,8 +1617,12 @@ async function loadViaMcp(id, url) {
     const name = bookTitle(meta);
     if (!titles.length) titles = ['data', 'segments', 'config'];
     const tables = [], failed = [];
-    for (const t of titles.slice(0, 15)) {
-      setStatus(`シート「${esc(t)}」を読み込み中…`);
+    // 関係ありそうなシートだけを、まとめて並行して読む（受注・ARR・出典などは読まない）
+    const known = titles.filter(t => RELEVANT_SHEET.test(t) && !/受注|ARR|出典/i.test(t));
+    const use = (known.length ? known : titles).slice(0, 15);
+    let done = 0;
+    setStatus(`シートを読み込み中… 0/${use.length}`);
+    const grids = await Promise.all(use.map(async t => {
       const q = "'" + t.replace(/'/g, "''") + "'";
       let grid = null;
       try { grid = findGrid(payloadOf(await smart('get_values', { range: q, sheet: t }))); }
@@ -1623,9 +1630,10 @@ async function loadViaMcp(id, url) {
         if (e && e.code !== 'tool_error') throw e;
         try { grid = findGrid(payloadOf(await smart('get_values', { range: q + '!A1:Z3000', sheet: t }))); } catch (e2) { if (e2 && e2.code !== 'tool_error') throw e2; }
       }
-      if (grid && grid.length) tables.push({ name: t, rows: grid.map(r => r.map(c => String(c ?? ''))) });
-      else failed.push(t);
-    }
+      setStatus(`シートを読み込み中… ${++done}/${use.length}`);
+      return grid;
+    }));
+    use.forEach((t, i) => { const grid = grids[i]; if (grid && grid.length) tables.push({ name: t, rows: grid.map(r => r.map(c => String(c ?? ''))) }); else failed.push(t); });
     if (!tables.length) { setStatus('シートの値を取得できませんでした。URL と閲覧権限を確認してください。', true); return; }
     if (ingest(tables, 'gsheet')) {
       rememberSheet(id, name, url);
@@ -1749,7 +1757,7 @@ const CMP = { companies: [], sel: [], raw: {}, fx: Object.assign({}, FX_JPY), cu
 
 /* シートの値を読む（Apps Script 版 / Claude 版で取得経路が違う） */
 async function readRanges(id, ranges) {
-  if (IS_GAS) return await new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(rej).getRanges(id, ranges));
+  if (IS_GAS) return await new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(rej).getRanges(id, ranges, !!CMP.fresh));
   const mcp = await getMcp();
   if (!mcp) throw { code: mcpWhy === 'noclaude' ? 'noclaude' : 'not_granted' };
   const out = {};
@@ -1760,7 +1768,7 @@ async function readRanges(id, ranges) {
   return out;
 }
 async function readTitles(id) {
-  if (IS_GAS) return await new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(rej).getSheetTitles(id));
+  if (IS_GAS) return await new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(rej).getSheetTitles(id, !!CMP.fresh));
   const mcp = await getMcp();
   if (!mcp) throw { code: mcpWhy === 'noclaude' ? 'noclaude' : 'not_granted' };
   return findSheetTitles(payloadOf(await mcpTool(mcp, 'get_spreadsheet', id, {})));
@@ -1864,8 +1872,8 @@ async function runCompare() {
   try {
     let done = 0;
     const res = [];
-    for (let i = 0; i < list.length; i += 4) {   // 4社ずつ並行して読む
-      const part = await Promise.all(list.slice(i, i + 4).map(async c => {
+    for (let i = 0; i < list.length; i += 8) {   // 8社ずつ並行して読む
+      const part = await Promise.all(list.slice(i, i + 8).map(async c => {
         try { const r = await fetchCompany(c); done++; setStatus(`各社の Financials を読み込み中… ${done}/${list.length}`); return { c, r }; }
         catch (e) { if (e && e.code && !['tool_error'].includes(e.code)) throw e; return { c, r: null }; }
       }));
@@ -1973,6 +1981,7 @@ function bindCompare() {
   $('#cmpSel').onclick = e => { const id = e.target.dataset && e.target.dataset.id; if (!id) return; CMP.sel = CMP.sel.filter(x => x !== id); renderCmpSel(); renderCmpList(); };
   $('#cmpGo').onclick = runCompare;
   $('#cmpAlign').onchange = e => { CMP.align = e.target.value; buildCompare(); };
+  $('#cmpFresh').onclick = async e => { e.preventDefault(); CMP.fresh = true; CMP.raw = {}; try { if (CMP.sel.length) await runCompare(); else await loadMaster(); } finally { CMP.fresh = false; } };
   $('#cmpCur').onchange = e => { CMP.cur = e.target.value; CMP.userCur = true; renderFx([...new Set((CMP.loaded || []).map(x => x.r.cur))]); buildCompare(); };
   $('#cmpFx').oninput = e => { const c = e.target.dataset.c; const v = num(e.target.value); if (!c || !(v > 0)) return; CMP.fx[c] = v * CMP.fx[CMP.cur]; clearTimeout(bindCompare._t); bindCompare._t = setTimeout(buildCompare, 300); };
   renderFx([]);
