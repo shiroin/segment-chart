@@ -233,6 +233,7 @@ body.gas .nogas{display:none!important}
     <div class="stack"><span>企業名</span><input type="text" id="oCompany" placeholder="例: 信越化学"></div>
     <div class="stack"><span>タイトル <small style="color:var(--mute)">（空欄で「企業名 セグメント別業績推移」）</small></span><input type="text" id="oTitle" placeholder="{企業名}　セグメント別業績推移"></div>
     <div class="stack"><span>注記 <small style="color:var(--mute)">（左下に表示。出所など）</small></span><input type="text" id="oNote" placeholder="例: 出所：決算説明資料"></div>
+    <div class="field"><span>表示する棒</span><select id="oBars"><option value="both">売上高と営業利益</option><option value="sales">売上高だけ</option><option value="op">営業利益だけ</option></select></div>
     <div class="field"><span>凡例</span><select id="oLegend"><option value="top">上（タイトル横）</option><option value="bottom">下</option><option value="none">表示しない</option></select></div>
     <div class="field"><span>営業利益率の線</span><label class="sw-toggle"><input type="checkbox" id="oMargin"><i></i></label></div>
     <div class="field"><span>最新の利益率を表示</span><label class="sw-toggle"><input type="checkbox" id="oLast"><i></i></label></div>
@@ -629,7 +630,7 @@ function buildModel(tables, paletteName) {
    状態
    ========================================================= */
 const O = {
-  title: '', company: '', note: '', unit: '', cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null, legend: 'top', showMargin: true, showLast: true, showLastBar: false,
+  title: '', company: '', note: '', unit: '', cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null, legend: 'top', bars: 'both', showMargin: true, showLast: true, showLastBar: false,
   marginColor: '#c0151f', height: 560, ratio: 'fit', rw: 16, rh: 9, pw: 1280, ph: 720, yMax: null, rMax: null, yMin: null, rMin: null, nQ: 20, endIdx: null, fillGaps: true, axisMode: 'shared',
 };
 let M = null, SOURCE = '';
@@ -733,6 +734,7 @@ function applyConfig(cfg) {
     else if (/画面|自動|fit|auto/i.test(v)) O.ratio = 'fit';
   }
   if ((v = g('幅','width')) != null && num(v)) { O.ratio = 'px'; O.pw = clamp(num(v), 360, 4000); O.ph = O.ph || O.height; }
+  if ((v = g('表示する棒','表示する値','棒グラフ','bars','show_bars')) != null) { const b = parseBars(v); if (b) O.bars = b; }
   if ((v = g('営業利益率','利益率','利益率の線','showmargin')) != null) O.showMargin = !/^(false|0|off|no|なし|非表示)$/i.test(v);
   if ((v = g('最新の利益率','最新値','showlast')) != null) O.showLast = !/^(false|0|off|no|なし|非表示)$/i.test(v);
 }
@@ -837,6 +839,13 @@ function visiblePeriods() {
   const n = clamp(O.nQ, 1, end + 1);
   return M.periods.slice(end - n + 1, end + 1);
 }
+// 表示する棒：both（売上高と営業利益）/ sales（売上高だけ）/ op（営業利益だけ）
+const parseBars = v => { const t = half(v).replace(/\s/g, '').toLowerCase(); if (!t) return null;
+  if (/^(both|両方|すべて|全部|売上高と営業利益|売上と利益|売上高と利益)$/.test(t)) return 'both';
+  if (/^(sales|revenue|売上|売上高|売上高だけ|売上だけ|売上のみ|売上高のみ)$/.test(t)) return 'sales';
+  if (/^(op|profit|operatingprofit|operating_profit|利益|営業利益|営業利益だけ|利益だけ|営業利益のみ|利益のみ)$/.test(t)) return 'op';
+  return null; };
+const showS = () => O.bars !== 'op', showO = () => O.bars !== 'sales';
 const margin = v => (v && v.sales > 0 && v.op != null) ? v.op / v.sales : null;
 const fmtN = (v, step) => { const d = Math.max(0, Math.min(4, Math.ceil(-Math.log10(step) - 1e-9) + (/[^0]5$|25$/.test(String(+(step / Math.pow(10, Math.floor(Math.log10(step)))).toFixed(3))) ? 1 : 0))); return v.toLocaleString('ja-JP', { minimumFractionDigits: 0, maximumFractionDigits: d }); };
 const fmtP = (v, step) => (v * 100).toFixed(step * 100 < 1 ? 1 : 0) + '%';
@@ -888,10 +897,11 @@ function render() {
   const K = scaleK();
   const get = (s, p) => { const v = (M.values[s.name] || {})[p.key]; return v ? { sales: v.sales == null ? null : v.sales * K, op: v.op == null ? null : v.op * K } : null; };
 
+  const useS = showS(), useO = showO();
   let lmax = 0, lmin = 0, rmax = 0, rmin = 0;
   segs.forEach(s => per.forEach(p => {
     const v = get(s, p); if (!v) return;
-    [v.sales, v.op].forEach(x => { if (x != null) { lmax = Math.max(lmax, x); lmin = Math.min(lmin, x); } });
+    [useS ? v.sales : null, useO ? v.op : null].forEach(x => { if (x != null) { lmax = Math.max(lmax, x); lmin = Math.min(lmin, x); } });
     const g = s.showMargin === false ? null : margin(v); if (g != null) { rmax = Math.max(rmax, g); rmin = Math.min(rmin, g); }
   }));
   const ax = axes(lmax, lmin, rmax, rmin, showM);
@@ -899,14 +909,14 @@ function render() {
   const each = O.axisMode === 'each' && segs.length > 1;
   const axE = each ? segs.map(s => {
     let mx = 0, mn = 0;
-    per.forEach(p => { const v = get(s, p); if (!v) return; [v.sales, v.op].forEach(x => { if (x != null) { mx = Math.max(mx, x); mn = Math.min(mn, x); } }); });
+    per.forEach(p => { const v = get(s, p); if (!v) return; [useS ? v.sales : null, useO ? v.op : null].forEach(x => { if (x != null) { mx = Math.max(mx, x); mn = Math.min(mn, x); } }); });
     return niceUp(Math.max(mx / ax.kp, ax.kn ? -mn / ax.kn : 0) || 1);
   }) : null;
   const lTop = ax.kp * ax.ls, lBot = -ax.kn * ax.ls, rTop = ax.kp * ax.rs, rBot = -ax.kn * ax.rs;
   const mc = O.marginColor;
 
   // ---- 凡例
-  const legItems = [{ k: 'sales', t: '売上' }, { k: 'op', t: '営業利益' }];
+  const legItems = [...(useS ? [{ k: 'sales', t: '売上' }] : []), ...(useO ? [{ k: 'op', t: '営業利益' }] : [])];
   if (showM) legItems.push({ k: 'margin', t: '営業利益率（右軸）' });
   const LFS = 12, swW = 18, legGap = 20;
   const legW = legItems.reduce((a, it) => a + swW + 6 + tw(it.t, LFS, 500), 0) + legGap * (legItems.length - 1);
@@ -930,7 +940,7 @@ function render() {
   const fxNote = (fxRate() && dispCurCode() !== O.cur) ? `換算レート：1 ${curLabel(O.cur)} = ${O.fx} ${curLabel(dispCurCode())}` : '';
   const note = String(O.note || '').trim();
   // 営業利益の代わりに税引前利益を表示している会社・セグメントがあれば注意書きを足す
-  const pbtSegs = segs.filter(s => s.pbt);
+  const pbtSegs = (useO || showM) ? segs.filter(s => s.pbt) : [];
   const pbtNote = !pbtSegs.length ? '' : SOURCE === 'compare'
     ? `※ ${pbtSegs.map(s => s.label).join('・')}は営業利益を開示していないため、「営業利益」に${PBT_LABEL}を表示しています（利益率も${PBT_LABEL}ベース）`
     : `※ ${pbtSegs.map(s => s.label).join('・')}の「営業利益」は${PBT_LABEL}です（利益率も${PBT_LABEL}ベース）`;
@@ -970,7 +980,7 @@ function render() {
       } else {
         const sw = swW / n;
         segs.forEach((s, i) => {
-          const c = it.k === 'sales' ? (s.salesColor || tint(s.color)) : (s.opColor || s.color);
+          const c = it.k === 'sales' ? (s.salesColor || (useO ? tint(s.color) : s.color)) : (s.opColor || s.color);
           o.push(`<rect x="${(lx + i * sw).toFixed(2)}" y="${ly - 10}" width="${(sw + 0.3).toFixed(2)}" height="12" fill="${c}"/>`);
         });
       }
@@ -985,7 +995,7 @@ function render() {
     o.push(`<text x="${padL - 10}" y="${yL(v) + 4}" font-size="11" fill="#6b7280" text-anchor="end">${fmtN(v, ax.ls)}</text>`);
   }
   const ut = unitText();
-  const lt = `売上・営業利益${ut ? `（${ut}）` : ''}`;
+  const lt = `${useS && useO ? '売上・営業利益' : useS ? '売上' : '営業利益'}${ut ? `（${ut}）` : ''}`;
   o.push(`<text transform="translate(16 ${plotTop + plotH / 2}) rotate(-90)" font-size="11" fill="#6b7280" text-anchor="middle">${esc(lt)}</text>`);
   // 右軸
   if (showM) {
@@ -1001,7 +1011,7 @@ function render() {
   segs.forEach((s, k) => {
     const px = pxOf(k);
     if (s.isTotal && n > 1) { const dx = px + pw + (gap + totGap) / 2; o.push(`<line x1="${dx.toFixed(1)}" x2="${dx.toFixed(1)}" y1="${headTop + 4}" y2="${plotBot + xLabH + yearH - 4}" stroke="#d1d5db" stroke-dasharray="3 4"/>`); }
-    const base = s.color, cS = s.salesColor || tint(base), cO = s.opColor || base;
+    const base = s.color, cS = s.salesColor || (useO ? tint(base) : base), cO = s.opColor || base;
     const head = s.isTotal ? '#1f2937' : shade(base, lum(base) > 0.62 ? 0.35 : 0.1);
     // 見出し
     const fit = (txt, max, min, wt) => {
@@ -1040,7 +1050,8 @@ function render() {
         const y1 = yL(Math.max(val, 0)), y2 = yL(Math.min(val, 0));
         o.push(`<rect x="${x.toFixed(2)}" y="${y1.toFixed(2)}" width="${barW.toFixed(2)}" height="${Math.max(0, y2 - y1).toFixed(2)}" rx="${rx}" fill="${fill}"/>`);
       };
-      bar(v.sales, cS); bar(v.op, cO);
+      if (useS) bar(v.sales, cS);
+      if (useO) bar(v.op, cO);
     });
     o.push('</g>');
     // 最新の売上・営業利益ラベル
@@ -1048,8 +1059,9 @@ function render() {
       let li = -1; per.forEach((p, i) => { if (get(s, p)) li = i; });
       if (li >= 0) {
         const v = get(s, per[li]), cx = px + li * band + band / 2;
-        if (v.sales != null) o.push(`<text x="${cx}" y="${yL(Math.max(v.sales, 0)) - 5}" font-size="10.5" font-weight="700" fill="${shade(cS, 0.45)}" text-anchor="${band < 30 ? 'end' : 'middle'}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtV(v.sales)}</text>`);
-        if (v.op != null && v.op > 0) o.push(`<text x="${cx}" y="${yL(v.op) + 13}" font-size="10.5" font-weight="700" fill="${lum(cO) > 0.6 ? '#111827' : '#fff'}" text-anchor="${band < 30 ? 'end' : 'middle'}">${fmtV(v.op)}</text>`);
+        if (useS && v.sales != null) o.push(`<text x="${cx}" y="${yL(Math.max(v.sales, 0)) - 5}" font-size="10.5" font-weight="700" fill="${shade(cS, 0.45)}" text-anchor="${band < 30 ? 'end' : 'middle'}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtV(v.sales)}</text>`);
+        if (useO && !useS && v.op != null) o.push(`<text x="${cx}" y="${yL(Math.max(v.op, 0)) - 5}" font-size="10.5" font-weight="700" fill="${shade(cO, 0.45)}" text-anchor="${band < 30 ? 'end' : 'middle'}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtV(v.op)}</text>`);
+        if (useO && useS && v.op != null && v.op > 0) o.push(`<text x="${cx}" y="${yL(v.op) + 13}" font-size="10.5" font-weight="700" fill="${lum(cO) > 0.6 ? '#111827' : '#fff'}" text-anchor="${band < 30 ? 'end' : 'middle'}">${fmtV(v.op)}</text>`);
       }
     }
     // 利益率の線
@@ -1168,7 +1180,7 @@ function syncControls() {
   $('#oAxisMode').value = O.axisMode || 'shared';
   $('#oTitle').value = O.title; $('#oCompany').value = O.company || ''; $('#oNote').value = O.note || ''; $('#oLegend').value = O.legend;
   syncUnits();
-  $('#oMargin').checked = O.showMargin; $('#oLast').checked = O.showLast; $('#oLastBar').checked = O.showLastBar;
+  $('#oBars').value = O.bars || 'both'; $('#oMargin').checked = O.showMargin; $('#oLast').checked = O.showLast; $('#oLastBar').checked = O.showLastBar;
   $('#oMColor').value = O.marginColor; $('#oH').value = O.height; $('#oHv').textContent = O.height;
   syncSize();
   $('#oYMax').value = O.yMax || ''; $('#oRMax').value = O.rMax || '';
@@ -1233,7 +1245,7 @@ function bindResize() {
   window.addEventListener('pointerup', () => { if (!drag) return; drag = null; persistOpt(); scheduleRender(); });
 }
 function persistOpt() {
-  store.save({ opt: { legend: O.legend, showMargin: O.showMargin, showLast: O.showLast, showLastBar: O.showLastBar, marginColor: O.marginColor, height: O.height, ratio: O.ratio, rw: O.rw, rh: O.rh, pw: O.pw, ph: O.ph } });
+  store.save({ opt: { bars: O.bars, legend: O.legend, showMargin: O.showMargin, showLast: O.showLast, showLastBar: O.showLastBar, marginColor: O.marginColor, height: O.height, ratio: O.ratio, rw: O.rw, rh: O.rh, pw: O.pw, ph: O.ph } });
 }
 /* 利益率の線のオン／オフボタン（セグメント・会社ごと） */
 const mgBtn = s => `<button class="mg${s.showMargin === false ? ' off' : ''}" title="営業利益率の線を${s.showMargin === false ? '表示する' : '消す'}"><svg width="18" height="12" viewBox="0 0 18 12"><path d="M1 9 L6 5 L11 7 L17 2" fill="none" stroke="${esc(O.marginColor)}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
@@ -1316,6 +1328,7 @@ function bindControls() {
   on('#oDispCur', 'change', e => { O.dispCur = e.target.value === O.cur ? 'same' : e.target.value; O.fx = null; uChg(); });
   on('#oFx', 'input', e => { O.fx = num(e.target.value) > 0 ? num(e.target.value) : null; syncUnits(); scheduleRender(); });
   on('#oLegend', 'change', e => { O.legend = e.target.value; render(); persist(); });
+  on('#oBars', 'change', e => { O.bars = e.target.value; render(); persist(); });
   on('#oMargin', 'change', e => { O.showMargin = e.target.checked; render(); persist(); });
   on('#oLast', 'change', e => { O.showLast = e.target.checked; render(); persist(); });
   on('#oLastBar', 'change', e => { O.showLastBar = e.target.checked; render(); persist(); });
