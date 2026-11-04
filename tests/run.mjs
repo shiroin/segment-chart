@@ -21,15 +21,15 @@ const note = ['四半期と年度は別シートで管理します。'];
 const matrix = (name, header, rows) => ({ name, rows: [[name], note, [], header, ...rows] });
 const SEGS = ['Alpha', 'Beta', 'Gamma'];
 const qRows = (base) => ['FY2025Q1', 'FY2025Q2', 'FY2025Q3', 'FY2025Q4', 'FY2026Q1'].map((p, i) => [p, ...SEGS.map((_, k) => String(base * (k + 1) + i * 10))]);
-const companyBook = (cur, scale) => [
+const companyBook = (cur, scale, profit = 'operating_profit') => [
   { name: '設定', rows: [['会社マスター設定'], ['…'], [], ['setting', 'value', '説明', '', '種類', '項目名', '表示名', 'カラー'],
     ['company_name', 'テスト社', '', '', 'セグメント', 'Alpha', 'Alpha', '#1675F8'],
     ['note', '※ 12月決算', '', '', 'セグメント', 'Beta', 'Beta', '#20B779'],
     ['input_currency', cur, '', '', 'セグメント', 'Gamma', 'Gamma', '#FFA126'],
     ['display_unit', '億（現地通貨）', '', '', 'ARR', 'X', 'X', '#000000'],
     ['margin_color', '#FF8A00'], ['revenue_color', '#1675F8'], ['operating_profit_color', '#08A89C']] },
-  matrix('会社全体_四半期', ['period', 'revenue', 'operating_profit'], qRows(100 * scale).map(r => [r[0], String(+r[1] * 6), String(+r[1] * 2)])),
-  matrix('会社全体_年度', ['period', 'revenue', 'operating_profit'], [['FY2024', String(2000 * scale), String(500 * scale)], ['FY2025', String(2600 * scale), String(700 * scale)]]),
+  matrix('会社全体_四半期', ['period', 'revenue', profit], qRows(100 * scale).map(r => [r[0], String(+r[1] * 6), String(+r[1] * 2)])),
+  matrix('会社全体_年度', ['period', 'revenue', profit], [['FY2024', String(2000 * scale), String(500 * scale)], ['FY2025', String(2600 * scale), String(700 * scale)]]),
   matrix('セグメント売上高_四半期', ['period', ...SEGS], qRows(100 * scale)),
   matrix('セグメント利益_四半期', ['period', ...SEGS], qRows(20 * scale)),
   matrix('セグメント売上高_年度', ['period', ...SEGS], []),
@@ -40,9 +40,10 @@ const MASTER_ID = 'MASTER_ID_0123456789abcdef';
 const master = [['', '', 'IR資料のまとめ'],
   ['No.', ' Ticker', '企業名', '日本名', ...Array(23).fill(''), 'Financials', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '決算期', '', '通貨'],
   ['1', 'AAA', 'Alpha Corp', 'アルファ', ...Array(23).fill(''), 'https://docs.google.com/spreadsheets/d/COMPANY_A_0123456789abcdef/edit', ...Array(16).fill(''), '12月', '', '円'],
+  ['3', 'CCC', 'Gamma Shoji', 'ガンマ商事', ...Array(23).fill(''), 'https://docs.google.com/spreadsheets/d/COMPANY_C_0123456789abcdef/edit', ...Array(16).fill(''), '3月', '', '円'],
   ['2', 'BBB', 'Beta Inc', 'ベータ', ...Array(23).fill(''), 'https://docs.google.com/spreadsheets/d/COMPANY_B_0123456789abcdef/edit', ...Array(16).fill(''), '1月', '', 'ドル']];
-master[1][7] = '業種カテゴリー1'; master[2][7] = 'AI'; master[3][7] = 'AI';
-const BOOKS = { [MASTER_ID]: [{ name: 'global_company_watch_300', rows: master }], COMPANY_A_0123456789abcdef: companyBook('JPY', 10), COMPANY_B_0123456789abcdef: companyBook('USD', 1), SHEET_ID_0123456789abcdefgh: companyBook('JPY', 10) };
+master[1][7] = '業種カテゴリー1'; master[2][7] = 'AI'; master[3][7] = '総合商社'; master[4][7] = 'AI';
+const BOOKS = { [MASTER_ID]: [{ name: 'global_company_watch_300', rows: master }], COMPANY_A_0123456789abcdef: companyBook('JPY', 10), COMPANY_B_0123456789abcdef: companyBook('USD', 1), COMPANY_C_0123456789abcdef: companyBook('JPY', 8, 'profit_before_tax'), SHEET_ID_0123456789abcdefgh: companyBook('JPY', 10) };
 const sheetOf = (id, a1) => { const nm = a1.replace(/!.*$/, '').replace(/^'|'$/g, '').replace(/''/g, "'"); return ((BOOKS[id] || []).find(t => t.name === nm) || {}).rows || null; };
 
 async function page(browser, url, init) {
@@ -130,6 +131,7 @@ console.log('2. Claude 版：シートのURLから読み込み（4シート形�
   ok(await p.evaluate(() => O.marginColor === '#ff8a00' && O.note === '※ 12月決算'), 'setting/value の設定を反映');
   await p.click('#segList .segrow.total input.vis');
   ok(await p.evaluate(() => M.total.visible), '会社全体を表示できる');
+  ok(await p.evaluate(() => { const rows = [['period', 'revenue', 'profit_before_tax'], ['FY2025Q1', '100', '10'], ['FY2025Q2', '120', '15']]; ingest([{ name: '会社全体_四半期', rows }], 't'); M.total.visible = true; render(); return M.total.pbt && [...document.querySelectorAll('#chart svg text')].some(t => /会社全体の「営業利益」は税引前当期純利益/.test(t.textContent)); }), '1社表示でも会社全体の税引前利益を読み、注意書きを出す');
   await p.screenshot({ path: SHOTS + '2-claude-sheet.png' });
   ok(!errs.length, 'エラーなし ' + errs.join(' / '));
   await p.close();
@@ -142,11 +144,15 @@ console.log('3. Claude 版：会社比較');
   await p.fill('#masterUrl', `https://docs.google.com/spreadsheets/d/${MASTER_ID}/edit`);
   await p.click('#loadMaster');
   await p.waitForTimeout(800);
-  ok(/2社/.test(await status(p)), 'マスターの会社一覧を読む');
+  ok(/3社/.test(await status(p)), 'マスターの会社一覧を読む');
   for (const el of await p.$$('#cmpList input[type=checkbox]')) await el.click();
   await p.click('#cmpGo');
   await p.waitForTimeout(1000);
-  ok(/2社 を読み込みました/.test(await status(p)), '2社を比較表示');
+  ok(/3社 を読み込みました/.test(await status(p)), '3社を比較表示');
+  ok(await p.evaluate(() => M.segs.filter(s => s.pbt).map(s => s.label).join() === 'ガンマ商事'), 'profit_before_tax しかない会社は税引前利益を「営業利益」として読む');
+  const pn = await p.$$eval('#chart svg text', a => a.map(t => t.textContent).filter(t => /税引前当期純利益/.test(t)));
+  ok(pn.length === 1 && /ガンマ商事/.test(pn[0]) && !/アルファ|ベータ/.test(pn[0]), '税引前利益の会社だけを注意書きに出す: ' + pn[0]);
+  ok(await p.$$eval('#chart svg text', a => a.some(t => t.textContent === '営業利益')), '凡例は「営業利益」のまま');
   ok(await p.evaluate(() => /換算/.test(O.note)), '換算レートを注記に表示');
   const al = await p.evaluate(() => { const lab = M.segs.find(x => /ベータ/.test(x.label)).label; const o = CMP.orig[lab]; return Object.entries(o).find(([k, v]) => /FY2026 1Q/.test(v)); });
   ok(al && al[0] === '20251' && /2025年2-4月/.test(al[1]), '1月決算の FY2026 1Q は暦年 2025 1Q（2-4月）に並ぶ: ' + JSON.stringify(al));
@@ -166,7 +172,7 @@ console.log('4. Apps Script 版');
   await p.fill('#masterUrl', `https://docs.google.com/spreadsheets/d/${MASTER_ID}/edit`);
   await p.click('#loadMaster');
   await p.waitForTimeout(600);
-  ok(/2社/.test(await status(p)), '会社比較のマスター読み込み');
+  ok(/3社/.test(await status(p)), '会社比較のマスター読み込み');
   ok(!errs.length, 'エラーなし ' + errs.join(' / '));
   await p.close();
 }

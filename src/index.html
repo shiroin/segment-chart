@@ -355,6 +355,8 @@ const H = {
   period:     ['期','四半期','決算期','年度','会計年度','period','quarter','時期','fiscalyear','fy','year'],
   sales:      ['売上','売上高','売上収益','sales','revenue','netsales'],
   op:         ['営業利益','セグメント利益','事業利益','利益','operatingincome','operatingprofit','op'],
+  // 営業利益の列がないときの代わり（総合商社など、営業利益を開示しない会社）
+  pbt:        ['税引前利益','税引前当期利益','税引前当期純利益','税前利益','税引前純利益','profitbeforetax','pretaxprofit','pretaxincome','incomebeforetax','incomebeforeincometaxes','pbt'],
   item:       ['項目','指標','item','metric'],
   key:        ['項目','設定','設定項目','key','setting','settings'],
   value:      ['値','設定値','value'],
@@ -369,6 +371,9 @@ const H = {
 };
 const HN = Object.fromEntries(Object.entries(H).map(([k, v]) => [k, v.map(normH)]));
 const findCol = (header, k) => { const hs = header.map(normH); return hs.findIndex(h => HN[k].includes(h)); };
+// 利益の列：営業利益を優先し、なければ税引前利益を使う（pbt=true で印を付ける）
+const profitCol = header => { const i = findCol(header, 'op'); if (i >= 0) return { i, pbt: false }; const j = findCol(header, 'pbt'); return { i: j, pbt: j >= 0 }; };
+const PBT_LABEL = '税引前当期純利益';
 
 /* 期の解釈: 2021 1Q / 2021Q1 / FY2021 Q1 / 1Q 2021 / 2025年3月期 1Q / FY24 2Q など */
 function parsePeriod(raw) {
@@ -439,7 +444,7 @@ function classify(rows) {
   for (let i = hi + 1; i < rows.length; i++) if (filled(rows[i])) body.push({ r: rows[i], i });
   const c = k => findCol(header, k);
   if (c('value') >= 0 && c('key') >= 0 && c('period') < 0) return { type: 'config', header, body };
-  if (c('period') >= 0 && (c('sales') >= 0 || c('op') >= 0)) return { type: 'long', header, body };
+  if (c('period') >= 0 && (c('sales') >= 0 || c('op') >= 0 || c('pbt') >= 0)) return { type: 'long', header, body };
   const periodCols = header.map((h, i) => parsePeriod(h) ? i : -1).filter(i => i >= 0);
   if (periodCols.length && c('seg') >= 0 && c('item') >= 0) return { type: 'wide', header, body, periodCols };
   if (c('seg') >= 0 && ['color','subtitle','visible','label','salesColor','opColor'].some(k => c(k) >= 0)) return { type: 'segments', header, body };
@@ -493,7 +498,7 @@ const STRICT_SEG = /^セグメント(売上高|利益)_(四半期|年度)$/;
 const STRICT_TOTAL = /^会社全体_(四半期|年度)$/;
 
 function buildModel(tables, paletteName) {
-  const recs = [], segMeta = [], cfg = {}, notes = [];
+  const recs = [], segMeta = [], cfg = {}, notes = [], pbt = new Set();
   tables = tables.flatMap(splitTable);
   // 「セグメント売上高_四半期」などの決まった名前のシートがあれば、それ（と会社全体）だけを読む
   const strict = tables.some(t => STRICT_SEG.test(String(t.name || '').trim()));
@@ -511,13 +516,14 @@ function buildModel(tables, paletteName) {
       const ki = col('key'), vi = col('value');
       body.forEach(({ r }) => { const k = normH(r[ki]); if (k) cfg[k] = String(r[vi] ?? '').trim(); });
     } else if (cl.type === 'long') {
-      const si = col('seg'), pi = col('period'), sa = col('sales'), oi = col('op');
+      const si = col('seg'), pi = col('period'), sa = col('sales'), pc = profitCol(header), oi = pc.i;
       const tot = si < 0 && isTotalName(tn);
       const hint = matrixKind([tn, ...rows0(t)]).gran;
       body.forEach(({ r }) => {
         const seg = tot ? TOTAL : si >= 0 ? String(r[si] ?? '').trim() : (t.name || 'セグメント');
         const p = String(r[pi] ?? '').trim();
         if (!seg || !p) return;
+        if (pc.pbt) pbt.add(seg);
         recs.push({ seg, p, sales: sa >= 0 ? num(r[sa]) : null, op: oi >= 0 ? num(r[oi]) : null, hint });
       });
     } else if (cl.type === 'wide') {
@@ -614,6 +620,8 @@ function buildModel(tables, paletteName) {
   const hasTotal = ['Q', 'Y'].some(g => views[g].values[TOTAL]);
   const total = hasTotal ? { name: TOTAL, label: '会社全体', subtitle: '', isTotal: true, visible: false, color: '#475569', defaultColor: '#475569', salesColor: null, opColor: null, marginColor: null } : null;
 
+  segs.forEach(s => { s.pbt = pbt.has(s.name); });
+  if (total) total.pbt = pbt.has(TOTAL);
   return { segs, total, views, periods: [], values: {}, cfg, notes, segTable, found, gran: 'Q' };
 }
 
@@ -921,7 +929,14 @@ function render() {
   const xLabH = 18, yearH = hasYears ? 22 : 0, legB = O.legend === 'bottom' ? 34 : 0;
   const fxNote = (fxRate() && dispCurCode() !== O.cur) ? `換算レート：1 ${curLabel(O.cur)} = ${O.fx} ${curLabel(dispCurCode())}` : '';
   const note = String(O.note || '').trim();
-  const noteH = (fxNote || note) ? 16 : 0;
+  // 営業利益の代わりに税引前利益を表示している会社・セグメントがあれば注意書きを足す
+  const pbtSegs = segs.filter(s => s.pbt);
+  const pbtNote = !pbtSegs.length ? '' : SOURCE === 'compare'
+    ? `※ ${pbtSegs.map(s => s.label).join('・')}は営業利益を開示していないため、「営業利益」に${PBT_LABEL}を表示しています（利益率も${PBT_LABEL}ベース）`
+    : `※ ${pbtSegs.map(s => s.label).join('・')}の「営業利益」は${PBT_LABEL}です（利益率も${PBT_LABEL}ベース）`;
+  const noteLines = [pbtNote, note].filter(Boolean);
+  if (fxNote && !noteLines.length) noteLines.push('');
+  const noteH = noteLines.length ? 3 + 13 * noteLines.length : 0;
   const plotBot = Math.max(plotTop + 120, HH - (xLabH + yearH + legB + noteH + 6));
   const plotH = plotBot - plotTop;
   if (O.legend === 'bottom') legendPos = { x: (W - legW) / 2, y: HH - 14 - noteH };
@@ -941,7 +956,7 @@ function render() {
   segs.forEach((s, k) => { const px = pxOf(k); o.push(`<clipPath id="cp${k}"><rect x="${px - 3}" y="${plotTop - 1}" width="${pw + 6}" height="${plotH + 2}"/></clipPath>`); });
   o.push('</defs>');
 
-  if (note) o.push(`<text x="16" y="${HH - 6}" font-size="10" fill="#9ca3af">${esc(note)}</text>`);
+  noteLines.forEach((t, j) => { if (t) o.push(`<text x="16" y="${HH - 6 - 13 * (noteLines.length - 1 - j)}" font-size="10" fill="${t === pbtNote ? '#6b7280' : '#9ca3af'}">${esc(t)}</text>`); });
   if (fxNote) o.push(`<text x="${W - 12}" y="${HH - 6}" font-size="10" fill="#9ca3af" text-anchor="end">${esc(fxNote)}</text>`);
   if (title) o.push(`<text x="16" y="${6 + 24}" font-size="${TFS}" font-weight="700" fill="#111827">${esc(title)}</text>`);
 
@@ -1129,8 +1144,8 @@ function bindHover() {
     const g = margin(v);
     tip.innerHTML = `<div class="h"><i style="background:${s.color}"></i>${esc(s.label)}</div><div class="p">${esc(plab(p))}${SOURCE === 'compare' && CMP.orig[s.label] && CMP.orig[s.label][p.key] ? `<br><span style="opacity:.8">${esc(CMP.orig[s.label][p.key])}</span>` : ''}　<span style="opacity:.7">単位: ${esc(unitText())}</span>${prev ? `　<span style="opacity:.7">${p.ann ? '前年比' : '前年同期比'}</span>` : ''}</div>
       <table><tr><td>売上</td><td>${f(v && v.sales)}</td><td>${prev ? yoy(v && v.sales, prev.sales) : ''}</td></tr>
-      <tr><td>営業利益</td><td>${f(v && v.op)}</td><td>${prev ? yoy(v && v.op, prev.op) : ''}</td></tr>
-      <tr><td>営業利益率</td><td>${g == null ? '–' : (g * 100).toFixed(1) + '%'}</td><td>${prev && g != null && margin(prev) != null ? ((g - margin(prev)) * 100 >= 0 ? '+' : '') + ((g - margin(prev)) * 100).toFixed(1) + 'pt' : ''}</td></tr></table>`;
+      <tr><td>${s.pbt ? PBT_LABEL : '営業利益'}</td><td>${f(v && v.op)}</td><td>${prev ? yoy(v && v.op, prev.op) : ''}</td></tr>
+      <tr><td>${s.pbt ? '税引前利益率' : '営業利益率'}</td><td>${g == null ? '–' : (g * 100).toFixed(1) + '%'}</td><td>${prev && g != null && margin(prev) != null ? ((g - margin(prev)) * 100 >= 0 ? '+' : '') + ((g - margin(prev)) * 100).toFixed(1) + 'pt' : ''}</td></tr></table>`;
     const r = tip.getBoundingClientRect();
     let x = e.clientX + 16, y = e.clientY + 14;
     if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 16;
@@ -1848,19 +1863,21 @@ async function fetchCompany(c) {
   const R = { set: q('設定') + '!A1:C60', Q: q('会社全体_四半期') + '!A1:D400', Y: q('会社全体_年度') + '!A1:D200' };
   const got = await readRanges(c.id, Object.values(R));
   const cfg = {};
+  let usedPbt = false;
   (got[R.set] || []).forEach(r => { if (r[0]) cfg[String(r[0]).trim()] = String(r[1] ?? '').trim(); });
   const pick = rows => {
     rows = rows || [];
     const hi = rows.findIndex(r => r.some(x => /^period$/i.test(String(x).trim())));
     if (hi < 0) return [];
     const h = rows[hi].map(x => normH(x));
-    const pi = h.findIndex(x => HN.period.includes(x)), si = h.findIndex(x => HN.sales.includes(x)), oi = h.findIndex(x => HN.op.includes(x));
+    const pi = h.findIndex(x => HN.period.includes(x)), si = h.findIndex(x => HN.sales.includes(x)), pc = profitCol(rows[hi]), oi = pc.i;
+    if (pc.pbt) usedPbt = true;
     return rows.slice(hi + 1).filter(r => String(r[pi] ?? '').trim()).map(r => [String(r[pi]).trim(), si >= 0 ? num(r[si]) : null, oi >= 0 ? num(r[oi]) : null]);
   };
   const curP = parseCur(cfg.input_currency || '') || parseCur(c.cur || '') || { code: 'JPY' };
   const monthOf = t => { const m = half(t || '').match(/(\d{1,2})\s*月/); return m && +m[1] >= 1 && +m[1] <= 12 ? +m[1] : null; };
   const raw = { cur: curP.code === 'custom' ? 'JPY' : curP.code, name: cfg.company_name || '', Q: pick(got[R.Q]), Y: pick(got[R.Y]),
-    fyMonth: monthOf(c.fy) || monthOf(cfg.note) || null };
+    fyMonth: monthOf(c.fy) || monthOf(cfg.note) || null, pbt: usedPbt };
   CMP.raw[c.id] = raw;
   return raw;
 }
@@ -1931,7 +1948,7 @@ function buildCompare() {
   const t = CMP.cur, pal = PALETTES[O.cmpPalette] || PALETTES['モダン'];
   const rows = [['セグメント', '期', '売上', '営業利益']];
   const segRows = [['セグメント', 'サブタイトル', '色']];
-  const used = [];
+  const used = [], pbtLabels = [];
   ok.forEach(({ c, r }, i) => {
     let label = cmpName(c); while (used.includes(label)) label += '＊'; used.push(label);
     const f = (CMP.fx[r.cur] || 1) / (CMP.fx[t] || 1);
@@ -1950,7 +1967,8 @@ function buildCompare() {
         rows.push([label, per, val(x.sa), val(x.op)]);
       });
     }
-    segRows.push([label, [c.tk, r.fyMonth ? r.fyMonth + '月決算' : '', r.cur].filter(Boolean).join('・'), pal[i % pal.length]]);
+    segRows.push([label, [c.tk, r.fyMonth ? r.fyMonth + '月決算' : '', r.cur, r.pbt ? '利益は税引前' : ''].filter(Boolean).join('・'), pal[i % pal.length]]);
+    if (r.pbt) pbtLabels.push(label);
   });
   const convs = [...new Set(ok.map(x => x.r.cur))].filter(c => c !== t).map(c => { const f = CMP.fx[c] / CMP.fx[t]; return f >= 1 ? `1${curLabel(c)}=${+f.toPrecision(4)}${curLabel(t)}` : `1${curLabel(t)}=${+(1 / f).toPrecision(4)}${curLabel(c)}`; });
   const unknownFy = ok.filter(x => !x.r.fyMonth).map(x => cmpName(x.c));
@@ -1962,6 +1980,7 @@ function buildCompare() {
   const keepGran = M && M.gran, keepAxis = O.axisMode;
   if (ingest([{ name: 'compare', rows }, { name: 'segments', rows: segRows }, { name: 'config', rows: cfg }], 'compare')) {
     O.axisMode = keepAxis;
+    M.segs.forEach(s => { s.pbt = pbtLabels.includes(s.name); });
     // 会社の規模が大きく違うときは、初回だけ目盛りを「グラフごと」にする
     if (!CMP.axisChosen) {
       const mx = ok.map(({ r }) => Math.max(0, ...[...r.Q, ...r.Y].map(x => x[1] || 0)) * (CMP.fx[r.cur] || 1)).filter(v => v > 0);
