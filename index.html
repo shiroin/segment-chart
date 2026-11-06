@@ -2232,7 +2232,7 @@ function renderSegView() {
       const topY = y;
       y = y0;
       neg.forEach((x, j) => { const h = -x.v * sc; seg(x, y, y + h, gr(j), 'N'); y += h; });
-      if (!it.vals.length) o.push(`<text x="${(bx + barW / 2).toFixed(1)}" y="${(y0 - 8).toFixed(1)}" font-size="11" fill="#9ca3af" text-anchor="middle">データなし</text>`);
+      if (!it.vals.length) o.push(`<text x="${(bx + barW / 2).toFixed(1)}" y="${(y0 - 8).toFixed(1)}" font-size="11" fill="#9ca3af" text-anchor="middle">この期のデータなし</text>`);
       const lx = bx + barW + 8;
       // プラス側のラベルはゼロの線より上に、下から詰めて並べる（収まらなければ上へ伸ばす）
       const P = lab.P.sort((a, b) => b.y - a.y);
@@ -2243,7 +2243,7 @@ function renderSegView() {
         if (Math.abs(l.y - l.ey) > 2.5) o.push(`<path d="M${(bx + barW + 1).toFixed(1)} ${l.ey.toFixed(1)}L${(lx - 2).toFixed(1)} ${l.y.toFixed(1)}" stroke="#9ca3af" stroke-width=".8" fill="none"/>`);
         o.push(`<text x="${lx.toFixed(1)}" y="${(l.y + 4).toFixed(1)}" font-size="11" font-weight="600" fill="#374151">${esc(fit(l.text, 11, 600, Math.max(30, room)))}</text>`);
       });
-      const hy = Math.min(topY, P.length ? P[P.length - 1].y - 6 : topY, y0) - (it.orig ? 22 : 8);
+      const hy = it.vals.length ? Math.min(topY, P.length ? P[P.length - 1].y - 6 : topY, y0) - (it.orig ? 22 : 8) : y0 - 30;
       head(it, bx + barW / 2, Math.max(top + 14, hy), slot - 6);
     });
   }
@@ -2282,7 +2282,7 @@ function bindCompare() {
    ========================================================= */
 (function init() { try {
   // 版の表示（build 時に日時が入る。Apps Script 版は取得元も出す）
-  const BUILD = '2026-11-06 11:50';
+  const BUILD = '2026-11-06 11:52';
   const showVer = () => {   // Apps Script が後ろに付ける目印（__PAGE_SRC）はページの最後で読まれるので、読み込み後に表示する
     const src = window.__PAGE_SRC === 'github' ? '・GitHubから取得' : window.__PAGE_SRC === 'local' ? '・Apps Script内の古いindex（Code.gsを更新してください）' : IS_GAS ? '・取得元不明（Code.gsが古い可能性）' : '';
     $('#ver').textContent = (BUILD.indexOf('BUILD') < 0 ? '版 ' + BUILD : '') + src;
