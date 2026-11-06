@@ -79,6 +79,7 @@ Google スプレッドシートの業績データ（セグメント別／会社�
 - 読み取り：`parsePeriod` / `parseYear` / `num` / `parseDelimited` / `classify` / `matrixKind` / `splitTable` / `buildModel`
 - 状態：`O`（表示設定）、`M`（読み込んだモデル。`views.Q` / `views.Y`、`segs`、`total`）、`ingest` → `applyConfig` → `setGran`（期の絞り込みと `fillGaps`）
 - 描画：`axes`（左右の目盛りをそろえる）、`render`（SVG を文字列で組み立てる。サイズに応じて viewBox で拡大縮小）
+  - 文字の大きさは `render` 内の `FS`（凡例・軸の名前・目盛り・最新値・横軸）。`TS = clamp(0.82 / F, 1, 1.5)` で、画面が小さい（スマホ）ほど大きくする。左右の余白 `padL` / `padR` は目盛りの文字幅から計算。グラフの最小幅は 260px。
 - 取得：`loadFromSheet`（版ごとに分岐）、`loadViaMcp`、`loadViaPublished`、会社比較は `loadMaster` / `fetchCompany` / `buildCompare`
 
 ## テスト

@@ -867,14 +867,14 @@ function ratioOf() {
   return O.ratio.split(':').map(Number);
 }
 function chartSize(host) {
-  const cw = Math.max(360, Math.floor(host.clientWidth || 900));
+  const cw = Math.max(260, Math.floor(host.clientWidth || 900));
   if (O.ratio === 'px') return [clamp(Math.round(O.pw) || 1280, 360, 4000), clamp(Math.round(O.ph) || 720, 240, 3000)];
   if (O.ratio === 'fit') return [cw, clamp(O.height, 240, 3000)];
   const [rw, rh] = ratioOf();
   const maxH = Math.max(420, window.innerHeight - 140);
   let W = cw, H = W * rh / rw;
   if (H > maxH) { H = maxH; W = H * rw / rh; }
-  if (W < 360) { W = 360; H = W * rh / rw; }
+  if (W < 260) { W = 260; H = W * rh / rw; }
   return [Math.round(W), Math.round(Math.max(240, H))];
 }
 function ratioLabel(w, h) {
@@ -904,6 +904,9 @@ function render() {
   // 文字・余白をサイズに比例させる（基準 1000×540）
   const F = clamp(Math.sqrt(Wpx * Hpx / (1000 * 540)), 0.62, 1.7);
   const W = Wpx / F, HH = Hpx / F;
+  // 文字の大きさ：凡例・軸の名前・目盛り・最新値を大きめに。画面が小さい（スマホなど）ときは、縮んで読めなくならないようさらに大きくする
+  const TS = clamp(0.82 / F, 1, 1.5);
+  const FS = { leg: 14 * TS, axT: 13 * TS, tick: 12 * TS, val: 13.5 * TS, mg: 14 * TS, xq: 11.5 * TS, xy: 11 * TS };
   const showM = O.showMargin && [...(M.total && M.total.visible ? [M.total] : []), ...M.segs.filter(s => s.visible)].some(s => s.showMargin !== false);
   const n = segs.length, m = per.length;
   const K = scaleK();
@@ -930,18 +933,19 @@ function render() {
   // ---- 凡例
   const legItems = [...(useS ? [{ k: 'sales', t: '売上' }] : []), ...(useO ? [{ k: 'op', t: '営業利益' }] : [])];
   if (showM) legItems.push({ k: 'margin', t: '営業利益率（右軸）' });
-  const LFS = 12, swW = 18, legGap = 20;
+  const LFS = FS.leg, swW = 20 * TS, legGap = 20 * TS;
   const legW = legItems.reduce((a, it) => a + swW + 6 + tw(it.t, LFS, 500), 0) + legGap * (legItems.length - 1);
 
   // ---- レイアウト
   const title = titleText();
   const TFS = 22;
-  const padL = 70, padR = showM ? 62 : 22;
+  const tickW = Math.max(...Array.from({ length: Math.floor(ax.kn) + ax.kp + 1 }, (_, j) => tw(fmtN((j - Math.floor(ax.kn)) * ax.ls + 0, ax.ls), FS.tick)));
+  const padL = Math.max(56, (each ? 0 : tickW + 10) + FS.axT + 18), padR = showM ? Math.max(62, tw('-100%', FS.tick) + FS.axT + 22) : 22;
   let y = 6, legendPos = null;
   if (title) y += 34;
   if (O.legend === 'top') {
     if (title && 16 + tw(title, TFS, 700) + 40 + legW <= W - 12) legendPos = { x: W - padR - legW, y: 6 + 21, inline: true };
-    else { legendPos = { x: W - padR - legW, y: y + 14 }; y += 26; }
+    else { legendPos = { x: Math.max(12, W - padR - legW), y: y + LFS + 2 }; y += LFS + 14; }
   }
   let gap = n <= 2 ? 34 : n <= 4 ? 22 : 16;
   if (each) gap = Math.max(gap, Math.max(...axE.map(ls => tw(fmtN(ax.kp * ls, ls), 10))) + 18);
@@ -957,7 +961,7 @@ function render() {
   const headH = Math.max(hasSub ? 50 : 30, nameH + (hasSub ? subH + 3 : 0) + 8);
   const plotTop = headTop + headH + 10;
   const hasYears = per.some(p => p.ylab);
-  const xLabH = 18, yearH = hasYears ? 22 : 0, legB = O.legend === 'bottom' ? 34 : 0;
+  const xLabH = 7 + FS.xq, yearH = hasYears ? 10 + FS.xy : 0, legB = O.legend === 'bottom' ? LFS + 22 : 0;
   const fxNote = (fxRate() && dispCurCode() !== O.cur) ? `換算レート：1 ${curLabel(O.cur)} = ${O.fx} ${curLabel(dispCurCode())}` : '';
   const note = String(O.note || '').trim();
   // 営業利益の代わりに税引前利益を表示している会社・セグメントがあれば注意書きを足す
@@ -992,13 +996,14 @@ function render() {
     let lx = legendPos.x; const ly = legendPos.y;
     legItems.forEach(it => {
       if (it.k === 'margin') {
-        o.push(`<line x1="${lx}" y1="${ly - 4}" x2="${lx + swW}" y2="${ly - 4}" stroke="${mc}" stroke-width="2.4" stroke-linecap="round"/>`);
-        o.push(`<circle cx="${lx + swW / 2}" cy="${ly - 4}" r="3" fill="#fff" stroke="${mc}" stroke-width="2"/>`);
+        const my = ly - LFS * 0.36;
+        o.push(`<line x1="${lx}" y1="${my}" x2="${lx + swW}" y2="${my}" stroke="${mc}" stroke-width="${2.4 * TS}" stroke-linecap="round"/>`);
+        o.push(`<circle cx="${lx + swW / 2}" cy="${my}" r="${3.2 * TS}" fill="#fff" stroke="${mc}" stroke-width="${2 * TS}"/>`);
       } else {
         const sw = swW / n;
         segs.forEach((s, i) => {
           const c = it.k === 'sales' ? (s.salesColor || (useO ? tint(s.color) : s.color)) : (s.opColor || s.color);
-          o.push(`<rect x="${(lx + i * sw).toFixed(2)}" y="${ly - 10}" width="${(sw + 0.3).toFixed(2)}" height="12" fill="${c}"/>`);
+          o.push(`<rect x="${(lx + i * sw).toFixed(2)}" y="${(ly - LFS * 0.85).toFixed(2)}" width="${(sw + 0.3).toFixed(2)}" height="${(LFS * 0.95).toFixed(2)}" fill="${c}"/>`);
         });
       }
       o.push(`<text x="${lx + swW + 6}" y="${ly}" font-size="${LFS}" font-weight="500" fill="#374151">${esc(it.t)}</text>`);
@@ -1009,19 +1014,19 @@ function render() {
   // 左軸
   if (!each) for (let i = -Math.floor(ax.kn); i <= ax.kp; i++) {
     const v = i * ax.ls + 0;
-    o.push(`<text x="${padL - 10}" y="${yL(v) + 4}" font-size="11" fill="#6b7280" text-anchor="end">${fmtN(v, ax.ls)}</text>`);
+    o.push(`<text x="${padL - 10}" y="${yL(v) + 4}" font-size="${FS.tick.toFixed(1)}" fill="#6b7280" text-anchor="end">${fmtN(v, ax.ls)}</text>`);
   }
   const ut = unitText();
   const lt = `${useS && useO ? '売上・営業利益' : useS ? '売上' : '営業利益'}${ut ? `（${ut}）` : ''}`;
-  o.push(`<text transform="translate(16 ${plotTop + plotH / 2}) rotate(-90)" font-size="11" fill="#6b7280" text-anchor="middle">${esc(lt)}</text>`);
+  o.push(`<text transform="translate(${(6 + FS.axT).toFixed(1)} ${plotTop + plotH / 2}) rotate(-90)" font-size="${FS.axT.toFixed(1)}" fill="#6b7280" text-anchor="middle">${esc(lt)}</text>`);
   // 右軸
   if (showM) {
     const rc = mix(mc, '#6b7280', 0.25);
     for (let i = -Math.floor(ax.kn); i <= ax.kp; i++) {
       const v = i * ax.rs + 0;
-      o.push(`<text x="${W - padR + 10}" y="${yR(v) + 4}" font-size="11" fill="${rc}">${fmtP(v, ax.rs)}</text>`);
+      o.push(`<text x="${W - padR + 10}" y="${yR(v) + FS.tick * 0.36}" font-size="${FS.tick.toFixed(1)}" fill="${rc}">${fmtP(v, ax.rs)}</text>`);
     }
-    o.push(`<text transform="translate(${W - 10} ${plotTop + plotH / 2}) rotate(90)" font-size="11" fill="${rc}" text-anchor="middle">営業利益率</text>`);
+    o.push(`<text transform="translate(${(W - 6 - FS.axT).toFixed(1)} ${plotTop + plotH / 2}) rotate(90)" font-size="${FS.axT.toFixed(1)}" fill="${rc}" text-anchor="middle">営業利益率</text>`);
   }
 
   // パネル
@@ -1039,7 +1044,7 @@ function render() {
     const lsK = each ? axE[k] : ax.ls;
     if (each) {
       yL = v => plotTop + (ax.kp * lsK - v) / ((ax.kp + ax.kn) * lsK) * plotH;
-      for (let i = -Math.floor(ax.kn); i <= ax.kp; i++) o.push(`<text x="${(px - 6).toFixed(1)}" y="${(yL(i * lsK) + 3.5).toFixed(1)}" font-size="10" fill="#6b7280" text-anchor="end">${fmtN(i * lsK + 0, lsK)}</text>`);
+      for (let i = -Math.floor(ax.kn); i <= ax.kp; i++) o.push(`<text x="${(px - 6).toFixed(1)}" y="${(yL(i * lsK) + 3.5).toFixed(1)}" font-size="${(FS.tick * 0.92).toFixed(1)}" fill="#6b7280" text-anchor="end">${fmtN(i * lsK + 0, lsK)}</text>`);
     }
     for (let i = -Math.floor(ax.kn); i <= ax.kp; i++) {
       const yy = yL(i * lsK).toFixed(1);
@@ -1066,9 +1071,9 @@ function render() {
       let li = -1; per.forEach((p, i) => { if (get(s, p)) li = i; });
       if (li >= 0) {
         const v = get(s, per[li]), cx = px + li * band + band / 2;
-        if (useS && v.sales != null) o.push(`<text x="${cx}" y="${yL(Math.max(v.sales, 0)) - 5}" font-size="10.5" font-weight="700" fill="${shade(cS, 0.45)}" text-anchor="${band < 30 ? 'end' : 'middle'}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtV(v.sales)}</text>`);
-        if (useO && !useS && v.op != null) o.push(`<text x="${cx}" y="${yL(Math.max(v.op, 0)) - 5}" font-size="10.5" font-weight="700" fill="${shade(cO, 0.45)}" text-anchor="${band < 30 ? 'end' : 'middle'}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtV(v.op)}</text>`);
-        if (useO && useS && v.op != null && v.op > 0) o.push(`<text x="${cx}" y="${yL(v.op) + 13}" font-size="10.5" font-weight="700" fill="${lum(cO) > 0.6 ? '#111827' : '#fff'}" text-anchor="${band < 30 ? 'end' : 'middle'}">${fmtV(v.op)}</text>`);
+        if (useS && v.sales != null) o.push(`<text x="${cx}" y="${yL(Math.max(v.sales, 0)) - 5}" font-size="${FS.val.toFixed(1)}" font-weight="700" fill="${shade(cS, 0.45)}" text-anchor="${band < 30 ? 'end' : 'middle'}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtV(v.sales)}</text>`);
+        if (useO && !useS && v.op != null) o.push(`<text x="${cx}" y="${yL(Math.max(v.op, 0)) - 5}" font-size="${FS.val.toFixed(1)}" font-weight="700" fill="${shade(cO, 0.45)}" text-anchor="${band < 30 ? 'end' : 'middle'}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtV(v.op)}</text>`);
+        if (useO && useS && v.op != null && v.op > 0) o.push(`<text x="${cx}" y="${yL(v.op) + FS.val * 1.1}" font-size="${FS.val.toFixed(1)}" font-weight="700" fill="${lum(cO) > 0.6 ? '#111827' : '#fff'}" text-anchor="${band < 30 ? 'end' : 'middle'}">${fmtV(v.op)}</text>`);
       }
     }
     // 利益率の線
@@ -1095,46 +1100,46 @@ function render() {
         const out = last.cy > plotBot ? 1 : last.cy < plotTop ? -1 : 0;
         if (!out) o.push(`<circle cx="${last.cx}" cy="${last.cy}" r="3.6" fill="#fff" stroke="${lc}" stroke-width="2"/>`);
         const txt = (out > 0 ? '\u25bc' : out < 0 ? '\u25b2' : '') + (last.g * 100).toFixed(1) + '%';
-        const anchor = last.cx + tw(txt, 11.5, 700) / 2 > px + pw + gap / 2 ? 'end' : 'middle';
-        const ty = out > 0 ? plotBot - 6 : out < 0 ? plotTop + 14 : (last.cy - 9 < plotTop + 10 ? last.cy + 18 : last.cy - 9);
-        o.push(`<text x="${anchor === 'end' ? last.cx + 4 : last.cx}" y="${ty}" font-size="11.5" font-weight="700" fill="${lc}" text-anchor="${anchor}" stroke="#fff" stroke-width="3.5" stroke-linejoin="round" paint-order="stroke">${txt}</text>`);
+        const anchor = last.cx + tw(txt, FS.mg, 700) / 2 > px + pw + gap / 2 ? 'end' : 'middle';
+        const ty = out > 0 ? plotBot - 6 : out < 0 ? plotTop + FS.mg + 2 : (last.cy - 7 - FS.mg * 0.2 < plotTop + FS.mg ? last.cy + FS.mg + 7 : last.cy - 7 - FS.mg * 0.2);
+        o.push(`<text x="${anchor === 'end' ? last.cx + 4 : last.cx}" y="${ty}" font-size="${FS.mg.toFixed(1)}" font-weight="700" fill="${lc}" text-anchor="${anchor}" stroke="#fff" stroke-width="3.5" stroke-linejoin="round" paint-order="stroke">${txt}</text>`);
       }
     }
     // X軸：四半期
-    const qy = plotBot + 13;
+    const qy = plotBot + 4 + FS.xq;
     let stride = 1;
     if (per.some(p => p.q)) {
-      const need = tw('4Q', 10.5) + 4;
+      const need = tw('4Q', FS.xq) + 4;
       const qShow = band >= need ? () => true : band * 2 >= need ? p => p.q % 2 === 1 : band * 4 >= need ? p => p.q === 1 : () => false;
-      per.forEach((p, i) => { if (qShow(p)) o.push(`<text x="${(px + i * band + band / 2).toFixed(1)}" y="${qy}" font-size="10.5" fill="#6b7280" text-anchor="middle">${p.qlab}</text>`); });
+      per.forEach((p, i) => { if (qShow(p)) o.push(`<text x="${(px + i * band + band / 2).toFixed(1)}" y="${qy}" font-size="${FS.xq.toFixed(1)}" fill="#6b7280" text-anchor="middle">${p.qlab}</text>`); });
     } else {
       let lab = p => p.qlab;
-      let wMax = Math.max(...per.map(p => tw(p.qlab, 10))) + 6;
-      if (wMax > band && per.every(p => p.ann && p.year)) { lab = p => "'" + String(p.year).slice(2); wMax = tw("'00", 10) + 6; }  // 年度が詰まるときは '25 の形に
+      let wMax = Math.max(...per.map(p => tw(p.qlab, FS.xq))) + 6;
+      if (wMax > band && per.every(p => p.ann && p.year)) { lab = p => "'" + String(p.year).slice(2); wMax = tw("'00", FS.xq) + 6; }  // 年度が詰まるときは '25 の形に
       stride = Math.max(1, Math.ceil(wMax / band));
       per.forEach((p, i) => {
         if ((per.length - 1 - i) % stride) return;
-        const t = lab(p), cx = px + i * band + band / 2, hw = tw(t, 10) / 2;
+        const t = lab(p), cx = px + i * band + band / 2, hw = tw(t, FS.xq) / 2;
         if (cx - hw < px - gap / 2 + 2 || cx + hw > px + pw + gap / 2 - 2) return;  // 隣のグラフにはみ出すラベルは省く
-        o.push(`<text x="${cx.toFixed(1)}" y="${qy}" font-size="10" fill="#6b7280" text-anchor="middle">${esc(t)}</text>`);
+        o.push(`<text x="${cx.toFixed(1)}" y="${qy}" font-size="${FS.xq.toFixed(1)}" fill="#6b7280" text-anchor="middle">${esc(t)}</text>`);
       });
     }
     // X軸：年
     if (hasYears) {
       const groups = [];
       per.forEach((p, i) => { const g = groups[groups.length - 1]; if (g && g.lab === p.ylab) g.e = i; else groups.push({ lab: p.ylab, s: i, e: i }); });
-      const yy = plotBot + xLabH + 13;
+      const yy = plotBot + xLabH + 3 + FS.xy;
       const yrW = groups.map(g => (g.e - g.s + 1) * band);
-      const useShort = groups.some((g, gi) => tw(g.lab, 11, 500) > yrW[gi] - 2 && gi > 0 && gi < groups.length - 1);
+      const useShort = groups.some((g, gi) => tw(g.lab, FS.xy, 500) > yrW[gi] - 2 && gi > 0 && gi < groups.length - 1);
       let lastR = -1e9;
       groups.forEach((g, gi) => {
         const x0 = px + g.s * band, x1 = px + (g.e + 1) * band, wdt = x1 - x0;
         if (gi > 0 && band >= 2) o.push(`<line x1="${x0.toFixed(1)}" x2="${x0.toFixed(1)}" y1="${plotBot + 3}" y2="${plotBot + xLabH + yearH - 2}" stroke="#d6dae0"/>`);
-        let lab = useShort || tw(g.lab, 11, 500) > wdt - 2 ? "'" + String(g.lab).replace(/\D/g, '').slice(2, 4) : g.lab;
-        const lw = tw(lab, 11, 500), cx = Math.min(Math.max((x0 + x1) / 2, px + lw / 2), px + pw - lw / 2);
+        let lab = useShort || tw(g.lab, FS.xy, 500) > wdt - 2 ? "'" + String(g.lab).replace(/\D/g, '').slice(2, 4) : g.lab;
+        const lw = tw(lab, FS.xy, 500), cx = Math.min(Math.max((x0 + x1) / 2, px + lw / 2), px + pw - lw / 2);
         if (cx - lw / 2 < lastR + 4) return;
         lastR = cx + lw / 2;
-        o.push(`<text x="${cx.toFixed(1)}" y="${yy}" font-size="11" font-weight="500" fill="#4b5563" text-anchor="middle">${esc(lab)}</text>`);
+        o.push(`<text x="${cx.toFixed(1)}" y="${yy}" font-size="${FS.xy.toFixed(1)}" font-weight="500" fill="#4b5563" text-anchor="middle">${esc(lab)}</text>`);
       });
     }
     // ホバー領域
