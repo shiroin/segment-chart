@@ -166,7 +166,17 @@ body.gas .nogas{display:none!important}
         </div>
         <div id="cmpList" class="cmplist"></div>
         <div id="cmpSel" class="cmpsel"></div>
-        <div class="field"><span>時期のそろえ方</span><select id="cmpAlign" style="width:150px">
+        <div class="field"><span>グラフ</span><select id="cmpView" style="width:150px">
+          <option value="trend">業績の推移</option>
+          <option value="donut">セグメントの売上構成（円）</option>
+          <option value="stack">セグメント別の利益（積み上げ）</option>
+        </select></div>
+        <div id="cmpSegOpts" style="display:none">
+          <div class="field"><span>区分</span><select id="cmpSegGran" style="width:150px"><option value="Q">四半期</option><option value="Y">年度（暦年）</option></select></div>
+          <div class="field"><span>期</span><select id="cmpSegPer" style="width:150px"></select></div>
+          <div class="field"><span>色</span><select id="cmpSegColor" style="width:150px"><option value="shade">会社の色の濃淡</option><option value="sheet">シートのセグメント色</option></select></div>
+        </div>
+        <div class="field" id="cmpAlignRow"><span>時期のそろえ方</span><select id="cmpAlign" style="width:150px">
           <option value="cal">暦年の四半期にそろえる</option>
           <option value="latest">最新期を右端にそろえる</option>
           <option value="fy">各社のFY表記のまま</option>
@@ -882,6 +892,7 @@ let LAST = null; // ホバー用
 function render() {
   const host = $('#chart');
   if (!M) return;
+  if (SOURCE === 'compare' && CMP.view && CMP.view !== 'trend' && CMP.loaded && CMP.loaded.some(x => x.r.seg)) { $('#tip').style.opacity = 0; return renderSegView(); }
   $('#tip').style.opacity = 0;
   const hasTot = !!(M.total && M.total.visible && M.values[TOTAL]);
   const segs = [...(hasTot ? [M.total] : []), ...M.segs.filter(s => s.visible)];
@@ -1782,7 +1793,7 @@ async function downloadTemplate() {
 const DEFAULT_MASTER = 'https://docs.google.com/spreadsheets/d/1NMjMQ6JeUuRRyy4X7m79YCTnklUgkdE76407QYY5ahQ/edit';
 // 1通貨あたりの円（2026年8月末ごろの目安。画面で書き換え可）
 const FX_JPY = { JPY: 1, USD: 160, EUR: 185.5, CNY: 23.5, TWD: 5.0, HKD: 20.4, KRW: 0.104, DKK: 24.8, SEK: 16.7, NOK: 17.0, CHF: 197.9, GBP: 216.8, SGD: 125.6, AUD: 114.7, CAD: 115.1, INR: 1.69 };
-const CMP = { companies: [], sel: [], raw: {}, fx: Object.assign({}, FX_JPY), cur: 'JPY', align: 'cal', orig: {} };
+const CMP = { companies: [], sel: [], raw: {}, fx: Object.assign({}, FX_JPY), cur: 'JPY', align: 'cal', orig: {}, view: 'trend', segGran: 'Q', segPer: null, segColor: 'shade' };
 
 /* シートの値を読む（Apps Script 版 / Claude 版で取得経路が違う） */
 async function readRanges(id, ranges) {
@@ -1874,11 +1885,20 @@ function renderFx(curs) {
 }
 async function fetchCompany(c) {
   if (CMP.raw[c.id]) return CMP.raw[c.id];
-  const R = { set: q('設定') + '!A1:C60', Q: q('会社全体_四半期') + '!A1:D400', Y: q('会社全体_年度') + '!A1:D200' };
+  const R = { set: q('設定') + '!A1:H60', Q: q('会社全体_四半期') + '!A1:D400', Y: q('会社全体_年度') + '!A1:D200' };
   const got = await readRanges(c.id, Object.values(R));
   const cfg = {};
   let usedPbt = false;
   (got[R.set] || []).forEach(r => { if (r[0]) cfg[String(r[0]).trim()] = String(r[1] ?? '').trim(); });
+  // 設定シート右側の「種類 | 項目名 | 表示名 | カラー」（種類＝セグメントの行）
+  const segMeta = [];
+  (() => {
+    const rows = got[R.set] || [];
+    const hi = rows.findIndex(r => r.some(x => String(x).trim() === '種類') && r.some(x => String(x).trim() === '項目名'));
+    if (hi < 0) return;
+    const h = rows[hi].map(x => String(x ?? '').trim()), ki = h.indexOf('種類'), ni = h.indexOf('項目名'), li = h.indexOf('表示名'), ci = h.indexOf('カラー');
+    rows.slice(hi + 1).forEach(r => { const name = String(r[ni] ?? '').trim(); if (name && /^(セグメント|segment)$/i.test(String(r[ki] ?? '').trim())) segMeta.push({ name, label: li >= 0 ? String(r[li] ?? '').trim() : '', color: ci >= 0 ? normColor(r[ci]) : null }); });
+  })();
   const pick = rows => {
     rows = rows || [];
     const hi = rows.findIndex(r => r.some(x => /^period$/i.test(String(x).trim())));
@@ -1891,7 +1911,7 @@ async function fetchCompany(c) {
   const curP = parseCur(cfg.input_currency || '') || parseCur(c.cur || '') || { code: 'JPY' };
   const monthOf = t => { const m = half(t || '').match(/(\d{1,2})\s*月/); return m && +m[1] >= 1 && +m[1] <= 12 ? +m[1] : null; };
   const raw = { cur: curP.code === 'custom' ? 'JPY' : curP.code, name: cfg.company_name || '', Q: pick(got[R.Q]), Y: pick(got[R.Y]),
-    fyMonth: monthOf(c.fy) || monthOf(cfg.note) || null, pbt: usedPbt };
+    fyMonth: monthOf(c.fy) || monthOf(cfg.note) || null, pbt: usedPbt, segMeta };
   CMP.raw[c.id] = raw;
   return raw;
 }
@@ -1963,6 +1983,7 @@ function buildCompare() {
   const rows = [['セグメント', '期', '売上', '営業利益']];
   const segRows = [['セグメント', 'サブタイトル', '色']];
   const used = [], pbtLabels = [];
+  CMP.labels = used;
   ok.forEach(({ c, r }, i) => {
     let label = cmpName(c); while (used.includes(label)) label += '＊'; used.push(label);
     const f = (CMP.fx[r.cur] || 1) / (CMP.fx[t] || 1);
@@ -2003,8 +2024,234 @@ function buildCompare() {
     }
     if (keepGran && M.views[keepGran].periods.length && keepGran !== M.gran) setGran(keepGran); else render();
     syncControls();
+    if (CMP.view !== 'trend') ensureSeg().catch(e => setStatus(e && e.code ? mcpErrMsg(e) : '読み込みに失敗しました: ' + esc(e && e.message || e), true));
   }
 }
+/* =========================================================
+   会社比較：セグメント構成（円グラフ）・セグメント別利益（積み上げ）
+   各社の「セグメント売上高_四半期/年度」「セグメント利益_四半期/年度」を読み、
+   選んだ1つの期について、会社ごとに並べる。期は暦年の四半期・暦年にそろえる（alignCompany と同じ考え方）。
+   ========================================================= */
+const SEG_EXCLUDE = /^(合計|計|総計|total|全社合計|連結|連結合計|consolidated)$/i;
+const SEG_ADJ = /調整|消去|elimination|adjust|reconcil|corporate|全社費用|本社/i;
+async function fetchSeg(c) {
+  const raw = CMP.raw[c.id] || await fetchCompany(c);
+  if (raw.seg) return raw.seg;
+  const R = { sQ: q('セグメント売上高_四半期') + '!A1:AZ400', sY: q('セグメント売上高_年度') + '!A1:AZ200', oQ: q('セグメント利益_四半期') + '!A1:AZ400', oY: q('セグメント利益_年度') + '!A1:AZ200' };
+  const got = await readRanges(c.id, Object.values(R));
+  const mat = rows => {
+    rows = rows || [];
+    const hi = rows.findIndex(r => r.some(x => /^period$/i.test(String(x).trim())));
+    if (hi < 0) return { names: [], rows: [] };
+    const h = rows[hi].map(x => String(x ?? '').trim());
+    const pi = h.findIndex(x => /^period$/i.test(x));
+    const cols = h.map((x, j) => ({ x, j })).filter(o => o.j !== pi && o.x && !SEG_EXCLUDE.test(normH(o.x)));
+    const out = rows.slice(hi + 1).filter(r => String(r[pi] ?? '').trim()).map(r => {
+      const v = {}; cols.forEach(o => { const n = num(r[o.j]); if (n != null) v[o.x] = n; });
+      return [String(r[pi]).trim(), v];
+    }).filter(([, v]) => Object.keys(v).length);
+    return { names: cols.map(o => o.x), rows: out };
+  };
+  raw.seg = { sQ: mat(got[R.sQ]), sY: mat(got[R.sY]), oQ: mat(got[R.oQ]), oY: mat(got[R.oY]) };
+  return raw.seg;
+}
+// 期 → 暦年の四半期・暦年（FY は「その年度が終わる年」。最新期が未来なら「始まる年」とみなして1年戻す）
+function calMapper(r) {
+  const fyM = r.fyMonth || 12;
+  const endOf = p => { const pq = parsePeriod(p), py = pq ? null : parseYear(p); if (!pq && !py) return null; const fe = (pq || py).year * 12 + (fyM - 1); return { pq, py, end: pq ? fe - 3 * (4 - pq.q) : fe }; };
+  const all = [...r.Q, ...r.Y].map(x => x[0]);
+  if (r.seg) Object.values(r.seg).forEach(m => m.rows.forEach(x => all.push(x[0])));
+  const now = new Date(), nowIdx = now.getFullYear() * 12 + now.getMonth();
+  const ends = all.map(endOf).filter(Boolean).map(x => x.end);
+  const shift = ends.length && Math.max(...ends) > nowIdx + 1 ? -12 : 0;
+  return p => {
+    const e = endOf(p); if (!e) return null;
+    const end = e.end + shift, len = e.pq ? 3 : 12, mid = end - (len === 3 ? 1 : 6);
+    const cy = Math.floor(mid / 12), cq = Math.floor((mid % 12) / 3) + 1;
+    return { gran: e.pq ? 'Q' : 'Y', key: e.pq ? cy * 4 + cq - 1 : cy, range: monthRange(end, len),
+      fyLab: e.pq ? `${e.pq.ylab || e.pq.year} ${e.pq.qlab}` : e.py.qlab };
+  };
+}
+const calLabel = (g, key) => g === 'Q' ? `${Math.floor(key / 4)}年${(key % 4) * 3 + 1}-${(key % 4) * 3 + 3}月期` : `${key}年`;
+// 各社の「期 → {名前: 値}」を暦の期で引けるようにする
+function segIndex() {
+  const g = CMP.segGran || 'Q', metric = CMP.view === 'donut' ? 's' : 'o';
+  return (CMP.loaded || []).map(({ c, r }, i) => {
+    const map = calMapper(r), m = (r.seg || {})[metric + g] || { names: [], rows: [] };
+    const by = {};
+    m.rows.forEach(([p, v]) => { const k = map(p); if (k && k.gran === g) by[k.key] = { v, orig: `${k.fyLab}（${k.range}）` }; });
+    return { c, r, label: (CMP.labels || [])[i] || cmpName(c), names: m.names, by };
+  });
+}
+function fillSegPeriods() {
+  const idx = segIndex(), g = CMP.segGran || 'Q';
+  const cnt = {}; idx.forEach(x => Object.keys(x.by).forEach(k => { cnt[k] = (cnt[k] || 0) + 1; }));
+  const keys = Object.keys(cnt).map(Number).sort((a, b) => b - a);
+  const best = Math.max(0, ...Object.values(cnt));
+  if (CMP.segPer == null || (CMP.segPer !== 'latest' && !cnt[CMP.segPer])) CMP.segPer = keys.find(k => cnt[k] === best) ?? 'latest';
+  $('#cmpSegPer').innerHTML = `<option value="latest">各社の最新期</option>` + keys.map(k => `<option value="${k}" ${String(k) === String(CMP.segPer) ? 'selected' : ''}>${esc(calLabel(g, k))}（${cnt[k]}社）</option>`).join('');
+  $('#cmpSegPer').value = String(CMP.segPer);
+}
+async function ensureSeg() {
+  const list = CMP.loaded || []; if (!list.length) return;
+  const need = list.filter(x => !x.r.seg);
+  if (need.length) {
+    let done = 0;
+    setStatus(`各社のセグメントを読み込み中… 0/${need.length}`);
+    for (let i = 0; i < need.length; i += 8) {
+      await Promise.all(need.slice(i, i + 8).map(async x => {
+        try { await fetchSeg(x.c); } catch (e) { if (e && e.code && e.code !== 'tool_error') throw e; x.r.seg = { sQ: { names: [], rows: [] }, sY: { names: [], rows: [] }, oQ: { names: [], rows: [] }, oY: { names: [], rows: [] } }; }
+        done++; setStatus(`各社のセグメントを読み込み中… ${done}/${need.length}`);
+      }));
+    }
+    setStatus(`<b>${list.length}社</b> のセグメントを読み込みました。期を選ぶと切り替わります。`);
+  }
+  fillSegPeriods();
+  render();
+}
+function segColors(it, names, base) {
+  const meta = Object.fromEntries((it.r.segMeta || []).map(m => [m.name, m]));
+  const posN = names.filter(n => !SEG_ADJ.test(n));
+  return n => {
+    if (CMP.segColor === 'sheet' && meta[n] && meta[n].color) return meta[n].color;
+    const j = posN.indexOf(n), k = posN.length;
+    return j < 0 ? '#bdb8b8' : mix(base, '#ffffff', k > 1 ? j / (k - 1) * 0.62 : 0);
+  };
+}
+const segLabelOf = (it, n) => { const m = (it.r.segMeta || []).find(x => x.name === n); return (m && m.label) || n; };
+// ラベルが重ならないよう、縦方向に最低間隔をあけて並べ直す
+function declutter(items, gap, lo, hi) {
+  items.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < items.length; i++) if (items[i].y - items[i - 1].y < gap) items[i].y = items[i - 1].y + gap;
+  if (items.length && items[items.length - 1].y > hi) { items[items.length - 1].y = hi; for (let i = items.length - 2; i >= 0; i--) if (items[i + 1].y - items[i].y < gap) items[i].y = items[i + 1].y - gap; }
+  if (items.length && items[0].y < lo) { const d = lo - items[0].y; items.forEach(x => { x.y += d; }); }
+  return items;
+}
+function renderSegView() {
+  const host = $('#chart');
+  const [Wpx, Hpx] = chartSize(host);
+  const F = clamp(Math.sqrt(Wpx * Hpx / (1000 * 540)), 0.62, 1.7);
+  const W = Wpx / F, HH = Hpx / F;
+  const idx = segIndex(), g = CMP.segGran || 'Q', donut = CMP.view === 'donut';
+  const t = CMP.cur, K = scaleK(), u = UNIT_LABEL[dispUnitValue()] || '';
+  const segOf = {}; (M ? M.segs : []).forEach(s => { segOf[s.name] = s; });
+  const items = idx.filter(it => !segOf[it.label] || segOf[it.label].visible !== false).map(it => {
+    let key = CMP.segPer;
+    if (key === 'latest' || key == null) { const ks = Object.keys(it.by).map(Number); key = ks.length ? Math.max(...ks) : null; } else key = +key;
+    const hit = key != null ? it.by[key] : null;
+    const f = (CMP.fx[it.r.cur] || 1) / (CMP.fx[t] || 1);
+    const vals = hit ? it.names.filter(n => hit.v[n] != null).map(n => ({ n, label: segLabelOf(it, n), v: hit.v[n] * f * K })) : [];
+    const base = (segOf[it.label] && segOf[it.label].color) || '#475569';
+    return { ...it, key, orig: hit ? hit.orig : '', vals, base, col: segColors(it, it.names, base) };
+  });
+  $('#footL').textContent = `${items.length}社・${CMP.segPer === 'latest' ? '各社の最新期' : calLabel(g, +CMP.segPer)}を表示中`;
+  if (!items.length) { host.innerHTML = '<div class="empty">会社を選んでください</div>'; return; }
+  const perTxt = CMP.segPer === 'latest' ? '各社の最新期' : calLabel(g, +CMP.segPer);
+  const title = donut ? `セグメント別の売上構成（${perTxt}）` : `セグメント別の営業利益（${perTxt}）`;
+  const convs = [...new Set(items.map(x => x.r.cur))].filter(c => c !== t).map(c => { const r = CMP.fx[c] / CMP.fx[t]; return r >= 1 ? `1${curLabel(c)}=${+r.toPrecision(4)}${curLabel(t)}` : `1${curLabel(t)}=${+(1 / r).toPrecision(4)}${curLabel(c)}`; });
+  const notes = [`単位：${unitText()}。各社の期は暦年の${g === 'Q' ? '四半期' : '年'}に換算${convs.length ? `。換算：${convs.join('、')}` : ''}`];
+  if (!donut) notes.unshift('※ セグメント利益の定義（営業利益・事業利益・EBITDA・当期利益など）は各社の開示による。調整額・消去を含む');
+  const noteH = 4 + 13 * notes.length;
+  const o = [];
+  o.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${Wpx}" height="${Hpx}" viewBox="0 0 ${W.toFixed(2)} ${HH.toFixed(2)}" font-family="${esc(FONT)}" style="font-family:${esc(FONT)}">`);
+  o.push(`<rect width="${W}" height="${HH}" fill="#ffffff"/>`);
+  o.push(`<text x="${W / 2}" y="34" font-size="22" font-weight="700" fill="#111827" text-anchor="middle">${esc(title)}</text>`);
+  notes.forEach((n, j) => o.push(`<text x="16" y="${HH - 6 - 13 * (notes.length - 1 - j)}" font-size="10" fill="#9ca3af">${esc(n)}</text>`));
+  const top = 58, bot = HH - noteH - 6;
+  const fit = (txt, fs, wt, room) => { let s = String(txt); if (tw(s, fs, wt) <= room) return s; while (s.length > 1 && tw(s + '…', fs, wt) > room) s = s.slice(0, -1); return s + '…'; };
+  const head = (it, cx, y, room) => {
+    o.push(`<text x="${cx}" y="${y}" font-size="16" font-weight="700" fill="${shade(it.base, lum(it.base) > 0.62 ? 0.35 : 0.05)}" text-anchor="middle"><title>${esc(it.label)}</title>${esc(fit(it.label, 16, 700, room))}</text>`);
+    if (it.orig) o.push(`<text x="${cx}" y="${y + 15}" font-size="10.5" fill="#6b7280" text-anchor="middle">${esc(fit(it.orig, 10.5, 400, room))}</text>`);
+  };
+  if (donut) {
+    const n = items.length, cols = n <= 2 ? n : n <= 4 ? 2 : n <= 9 ? 3 : n <= 16 ? 4 : 5, rows = Math.ceil(n / cols);
+    const ch = (bot - top) / rows;
+    items.forEach((it, i) => {
+      const row = Math.floor(i / cols), inRow = Math.min(cols, n - row * cols), cw = W / cols;
+      const cx = (W - inRow * cw) / 2 + (i - row * cols + 0.5) * cw, y0 = top + row * ch;
+      head(it, cx, y0 + 16, cw - 16);
+      const R = Math.max(20, Math.min(cw * 0.24, (ch - 44) * 0.42)), r0 = R * 0.54, cy = y0 + 34 + (ch - 34) / 2;
+      const pos = it.vals.filter(x => x.v > 0 && !SEG_ADJ.test(x.n)), tot = pos.reduce((a, x) => a + x.v, 0);
+      if (!tot) { o.push(`<text x="${cx}" y="${cy}" font-size="12" fill="#9ca3af" text-anchor="middle">この期のセグメント売上なし</text>`); return; }
+      let a = -Math.PI / 2;
+      const lab = { L: [], R: [] };
+      pos.forEach(x => {
+        const sw = x.v / tot * Math.PI * 2, a1 = a + sw, c = it.col(x.n), pct = x.v / tot;
+        const P = (ang, rr) => [cx + rr * Math.cos(ang), cy + rr * Math.sin(ang)];
+        const big = sw > Math.PI ? 1 : 0;
+        const [x1, y1] = P(a, R), [x2, y2] = P(a1 - 1e-6, R), [x3, y3] = P(a1 - 1e-6, r0), [x4, y4] = P(a, r0);
+        o.push(`<path d="M${x1.toFixed(2)} ${y1.toFixed(2)}A${R} ${R} 0 ${big} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}L${x3.toFixed(2)} ${y3.toFixed(2)}A${r0} ${r0} 0 ${big} 0 ${x4.toFixed(2)} ${y4.toFixed(2)}Z" fill="${c}" stroke="#fff" stroke-width="1.5"><title>${esc(x.label)}：${fmtV(x.v)}${esc(u + curLabel(t))}（${(pct * 100).toFixed(1)}%）</title></path>`);
+        const mid = a + sw / 2, inside = pct >= 0.045;
+        if (inside) { const [tx, ty] = P(mid, (R + r0) / 2); o.push(`<text x="${tx.toFixed(1)}" y="${(ty + 4).toFixed(1)}" font-size="${clamp(R * 0.16, 9, 14).toFixed(1)}" font-weight="700" fill="${lum(c) > 0.66 ? '#374151' : '#fff'}" text-anchor="middle" pointer-events="none">${Math.round(pct * 100)}%</text>`); }
+        const [ex, ey] = P(mid, R + 2), side = Math.cos(mid) >= 0 ? 'R' : 'L';
+        lab[side].push({ y: ey, ex, ey, text: x.label + (inside ? '' : ` ${Math.max(1, Math.round(pct * 100))}%`) });
+        a = a1;
+      });
+      const room = cw / 2 - R - 18;
+      ['L', 'R'].forEach(sd => declutter(lab[sd], 14, y0 + 40, y0 + ch - 6).forEach(l => {
+        const lx = cx + (sd === 'R' ? 1 : -1) * (R + 12);
+        if (Math.abs(l.y - l.ey) > 3 || Math.abs(lx - l.ex) > 14) o.push(`<path d="M${l.ex.toFixed(1)} ${l.ey.toFixed(1)}L${(lx + (sd === 'R' ? -3 : 3)).toFixed(1)} ${l.y.toFixed(1)}" stroke="#9ca3af" stroke-width=".8" fill="none"/>`);
+        o.push(`<text x="${lx.toFixed(1)}" y="${(l.y + 4).toFixed(1)}" font-size="11.5" font-weight="600" fill="#374151" text-anchor="${sd === 'R' ? 'start' : 'end'}">${esc(fit(l.text, 11.5, 600, Math.max(40, room)))}</text>`);
+      }));
+      o.push(`<text x="${cx}" y="${cy - 3}" font-size="${clamp(r0 * 0.24, 9, 13).toFixed(1)}" fill="#374151" text-anchor="middle">売上</text>`);
+      const tt = fmtV(tot) + u + curLabel(t);
+      o.push(`<text x="${cx}" y="${cy + clamp(r0 * 0.3, 11, 17)}" font-size="${clamp(Math.min(r0 * 0.3, r0 * 1.7 / Math.max(1, tw(tt, 1, 700))), 8, 17).toFixed(1)}" font-weight="700" fill="#111827" text-anchor="middle">${esc(tt)}</text>`);
+    });
+  } else {
+    const n = items.length, padX = 16, slot = (W - padX * 2) / n;
+    const barW = clamp(slot * 0.3, 14, 76), LG = 12.5;
+    const sums = items.map(it => ({ p: it.vals.filter(x => x.v > 0).reduce((a, x) => a + x.v, 0), m: it.vals.filter(x => x.v < 0).reduce((a, x) => a - x.v, 0),
+      np: it.vals.filter(x => x.v > 0).length, nm: it.vals.filter(x => x.v < 0).length, hd: it.orig ? 30 : 16 }));
+    const maxP = Math.max(0, ...sums.map(s => s.p)), maxM = Math.max(0, ...sums.map(s => s.m));
+    // 小さい会社は名前のラベルが棒からはみ出すので、その分の余白を上下に確保する（2回まわして収める）
+    let ptop = top + 34, pbot = bot - 6, sc = 1, y0 = 0;
+    for (let pass = 0; pass < 3; pass++) {
+      sc = (pbot - ptop) / ((maxP + maxM) || 1); y0 = ptop + maxP * sc;
+      const needTop = Math.max(0, ...sums.map(s => (top + 14) - (y0 - Math.max(s.p * sc, s.np * LG) - s.hd)));
+      const needBot = Math.max(0, ...sums.map(s => s.nm ? (y0 + 6 + Math.max(s.m * sc, s.nm * LG)) - (bot - 6) : 0));
+      if (needTop < 1 && needBot < 1) break;
+      ptop += needTop; pbot -= needBot;
+      if (pbot - ptop < 80) { pbot = ptop + 80; break; }
+    }
+    o.push(`<line x1="${padX - 6}" x2="${W - padX + 6}" y1="${y0.toFixed(1)}" y2="${y0.toFixed(1)}" stroke="#111827" stroke-width="1.6"/>`);
+    const grays = k => j => mix('#6f6a6b', '#d6d3d3', k > 1 ? j / (k - 1) : 0);
+    items.forEach((it, i) => {
+      const sx = padX + i * slot, bx = sx + slot * 0.1, room = slot - (bx - sx) - barW - 10;
+      const pos = it.vals.filter(x => x.v > 0), neg = it.vals.filter(x => x.v < 0), gr = grays(neg.length);
+      const lab = { P: [], N: [] };
+      const seg = (x, yA, yB, c, side) => {
+        const h = yB - yA;
+        o.push(`<rect x="${bx.toFixed(1)}" y="${yA.toFixed(2)}" width="${barW.toFixed(1)}" height="${Math.max(0.6, h).toFixed(2)}" fill="${c}"><title>${esc(x.label)}：${fmtV(x.v)}${esc(u + curLabel(t))}</title></rect>`);
+        const vt = fmtV(x.v) + u, fs = clamp(Math.min(11.5, h - 2, 11.5 * (barW - 6) / Math.max(1, tw(vt, 11.5, 700))), 0, 11.5);
+        const inside = fs >= 7.5;
+        if (inside) o.push(`<text x="${(bx + barW / 2).toFixed(1)}" y="${((yA + yB) / 2 + fs * 0.36).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" fill="${lum(c) > 0.7 ? '#374151' : '#fff'}" text-anchor="middle" pointer-events="none">${esc(vt)}</text>`);
+        lab[side].push({ y: (yA + yB) / 2, ey: (yA + yB) / 2, text: x.label + (inside ? '' : ` ${vt}`) });
+      };
+      let y = y0;
+      [...pos].reverse().forEach(x => { const h = x.v * sc; seg(x, y - h, y, it.col(x.n), 'P'); y -= h; });
+      const topY = y;
+      y = y0;
+      neg.forEach((x, j) => { const h = -x.v * sc; seg(x, y, y + h, gr(j), 'N'); y += h; });
+      if (!it.vals.length) o.push(`<text x="${(bx + barW / 2).toFixed(1)}" y="${(y0 - 8).toFixed(1)}" font-size="11" fill="#9ca3af" text-anchor="middle">データなし</text>`);
+      const lx = bx + barW + 8;
+      // プラス側のラベルはゼロの線より上に、下から詰めて並べる（収まらなければ上へ伸ばす）
+      const P = lab.P.sort((a, b) => b.y - a.y);
+      for (let j = 0; j < P.length; j++) P[j].y = Math.min(P[j].y, j ? P[j - 1].y - LG : y0 - 6);
+      const N = lab.N.sort((a, b) => a.y - b.y);
+      for (let j = 0; j < N.length; j++) N[j].y = Math.max(N[j].y, j ? N[j - 1].y + LG : y0 + 10);
+      [...P, ...N].forEach(l => {
+        if (Math.abs(l.y - l.ey) > 2.5) o.push(`<path d="M${(bx + barW + 1).toFixed(1)} ${l.ey.toFixed(1)}L${(lx - 2).toFixed(1)} ${l.y.toFixed(1)}" stroke="#9ca3af" stroke-width=".8" fill="none"/>`);
+        o.push(`<text x="${lx.toFixed(1)}" y="${(l.y + 4).toFixed(1)}" font-size="11" font-weight="600" fill="#374151">${esc(fit(l.text, 11, 600, Math.max(30, room)))}</text>`);
+      });
+      const hy = Math.min(topY, P.length ? P[P.length - 1].y - 6 : topY, y0) - (it.orig ? 22 : 8);
+      head(it, bx + barW / 2, Math.max(top + 14, hy), slot - 6);
+    });
+  }
+  o.push('</svg>');
+  host.innerHTML = o.join('');
+  LAST = null;
+}
+
 function bindCompare() {
   $('#masterUrl').value = store.load().master || DEFAULT_MASTER;
   $('#loadMaster').onclick = loadMaster;
@@ -2014,6 +2261,16 @@ function bindCompare() {
   $('#cmpSel').onclick = e => { const id = e.target.dataset && e.target.dataset.id; if (!id) return; CMP.sel = CMP.sel.filter(x => x !== id); renderCmpSel(); renderCmpList(); };
   $('#cmpGo').onclick = runCompare;
   $('#cmpAlign').onchange = e => { CMP.align = e.target.value; buildCompare(); };
+  $('#cmpView').onchange = e => {
+    CMP.view = e.target.value;
+    $('#cmpSegOpts').style.display = CMP.view === 'trend' ? 'none' : '';
+    $('#cmpAlignRow').style.display = CMP.view === 'trend' ? '' : 'none';
+    if (CMP.view === 'trend') render();
+    else if (CMP.loaded && CMP.loaded.length) ensureSeg().catch(err => setStatus(err && err.code ? mcpErrMsg(err) : '読み込みに失敗しました: ' + esc(err && err.message || err), true));
+  };
+  $('#cmpSegGran').onchange = e => { CMP.segGran = e.target.value; CMP.segPer = null; fillSegPeriods(); render(); };
+  $('#cmpSegPer').onchange = e => { CMP.segPer = e.target.value === 'latest' ? 'latest' : +e.target.value; render(); };
+  $('#cmpSegColor').onchange = e => { CMP.segColor = e.target.value; render(); };
   $('#cmpFresh').onclick = async e => { e.preventDefault(); CMP.fresh = true; CMP.raw = {}; try { if (CMP.sel.length) await runCompare(); else await loadMaster(); } finally { CMP.fresh = false; } };
   $('#cmpCur').onchange = e => { CMP.cur = e.target.value; CMP.userCur = true; renderFx([...new Set((CMP.loaded || []).map(x => x.r.cur))]); buildCompare(); };
   $('#cmpFx').oninput = e => { const c = e.target.dataset.c; const v = num(e.target.value); if (!c || !(v > 0)) return; CMP.fx[c] = v * CMP.fx[CMP.cur]; clearTimeout(bindCompare._t); bindCompare._t = setTimeout(buildCompare, 300); };
@@ -2025,7 +2282,7 @@ function bindCompare() {
    ========================================================= */
 (function init() { try {
   // 版の表示（build 時に日時が入る。Apps Script 版は取得元も出す）
-  const BUILD = '2026-11-04 19:59';
+  const BUILD = '2026-11-06 11:50';
   const showVer = () => {   // Apps Script が後ろに付ける目印（__PAGE_SRC）はページの最後で読まれるので、読み込み後に表示する
     const src = window.__PAGE_SRC === 'github' ? '・GitHubから取得' : window.__PAGE_SRC === 'local' ? '・Apps Script内の古いindex（Code.gsを更新してください）' : IS_GAS ? '・取得元不明（Code.gsが古い可能性）' : '';
     $('#ver').textContent = (BUILD.indexOf('BUILD') < 0 ? '版 ' + BUILD : '') + src;
