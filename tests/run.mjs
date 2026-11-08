@@ -42,6 +42,7 @@ const master = [['', '', 'IR資料のまとめ'],
   ['1', 'AAA', 'Alpha Corp', 'アルファ', ...Array(23).fill(''), 'https://docs.google.com/spreadsheets/d/COMPANY_A_0123456789abcdef/edit', ...Array(16).fill(''), '12月', '', '円'],
   ['3', 'CCC', 'Gamma Shoji', 'ガンマ商事', ...Array(23).fill(''), 'https://docs.google.com/spreadsheets/d/COMPANY_C_0123456789abcdef/edit', ...Array(16).fill(''), '3月', '', '円'],
   ['2', 'BBB', 'Beta Inc', 'ベータ', ...Array(23).fill(''), 'https://docs.google.com/spreadsheets/d/COMPANY_B_0123456789abcdef/edit', ...Array(16).fill(''), '1月', '', 'ドル']];
+master[1][45] = '決算日'; master[2][45] = '2000/01/05'; master[3][45] = '2999-12-31'; master[4][45] = '';
 master[1][47] = 'AI'; master[1][48] = '海運'; master[2][47] = '1'; master[3][48] = '1'; master[4][47] = '1';
 master[1][7] = '業種カテゴリー1'; master[2][7] = 'AI'; master[3][7] = '総合商社'; master[4][7] = 'AI';
 const BOOKS = { [MASTER_ID]: [{ name: 'global_company_watch_300', rows: master }], COMPANY_A_0123456789abcdef: companyBook('JPY', 10), COMPANY_B_0123456789abcdef: companyBook('USD', 1), COMPANY_C_0123456789abcdef: companyBook('JPY', 8, 'profit_before_tax'), SHEET_ID_0123456789abcdefgh: companyBook('JPY', 10) };
@@ -158,7 +159,12 @@ console.log('3. Claude 版：会社比較');
   await p.click('#loadMaster');
   await p.waitForTimeout(800);
   ok(/3社/.test(await status(p)), 'マスターの会社一覧を読む');
-  ok(await p.$eval('#cmpGroup', e => [...e.options].map(o => o.text).join('|')) === 'カテゴリーでまとめて選ぶ…|AI（2社）|海運（1社）', 'AV〜EE 列のカテゴリーを読む');
+  ok(await p.$eval('#cmpGroup', e => [...e.options].map(o => o.text).join('|')) === 'カテゴリーでまとめて選ぶ…|AI（2社・発表済み 1/2）|海運（1社・発表済み 0/1）', 'AV〜EE 列のカテゴリーと発表済みの数を読む: ' + await p.$eval('#cmpGroup', e => [...e.options].map(o => o.text).join('|')));
+  await p.selectOption('#cmpGroup', '海運');
+  ok(/発表済み 0\/1社/.test(await p.$eval('#cmpGroupInfo', e => e.innerText)) && /全社そろう見込み：2999\/12\/31/.test(await p.$eval('#cmpGroupInfo', e => e.innerText)), '決算の進み具合と全社そろう見込みを出す');
+  await p.selectOption('#cmpGroup', 'AI');
+  ok(/決算日が未登録：ベータ/.test(await p.$eval('#cmpGroupInfo', e => e.innerText)), '決算日がない会社を知らせる');
+  await p.selectOption('#cmpGroup', '海運'); await p.screenshot({ path: SHOTS + '3a-group.png', clip: { x: 0, y: 0, width: 310, height: 700 } });
   await p.selectOption('#cmpGroup', '海運'); await p.click('#cmpGroupSet');
   ok(await p.evaluate(() => CMP.sel.length === 1 && CMP.companies.find(c => c.id === CMP.sel[0]).ja === 'ガンマ商事'), '「入れ替え」でカテゴリーの会社だけを選ぶ');
   await p.selectOption('#cmpGroup', 'AI'); await p.click('#cmpGroupAdd');

@@ -116,6 +116,8 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .pair{display:flex;align-items:center;gap:4px;color:var(--mute)}
 .pair input{width:64px!important;text-align:right}
 .empty{display:flex;align-items:center;justify-content:center;height:420px;color:var(--mute)}
+.ginfo{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px;line-height:1.6;background:#fafbfc}
+.ginfo b{font-weight:700}.ginfo .done{color:#047857}.ginfo .wait{color:#b45309}.ginfo ul{margin:4px 0 0;padding-left:16px}.ginfo li{margin:1px 0}
 .foot{display:flex;justify-content:space-between;color:var(--mute);font-size:11.5px;margin-top:10px;padding:0 4px}
 #tip{position:fixed;pointer-events:none;background:rgba(17,24,39,.94);color:#fff;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.55;opacity:0;transition:opacity .08s;z-index:20;min-width:170px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
 #tip .h{display:flex;align-items:center;gap:6px;font-weight:700;margin-bottom:4px}
@@ -164,11 +166,12 @@ body.gas .nogas{display:none!important}
           <input type="text" id="cmpFilter" placeholder="社名・ティッカーで検索" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12px">
           <select id="cmpCat" style="width:110px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:12px"></select>
         </div>
-        <div style="display:flex;gap:6px;margin-bottom:6px">
-          <select id="cmpGroup" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:12px;padding:5px 4px"><option value="">カテゴリーでまとめて選ぶ…</option></select>
-          <button class="btn" id="cmpGroupAdd" style="padding:5px 8px;font-size:12px" title="このカテゴリーの会社を、選んでいる会社に加える">追加</button>
-          <button class="btn" id="cmpGroupSet" style="padding:5px 8px;font-size:12px" title="選んでいる会社を、このカテゴリーの会社だけにする">入れ替え</button>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+          <select id="cmpGroup" style="flex:1 1 100%;min-width:0;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:12px;padding:5px 4px"><option value="">カテゴリーでまとめて選ぶ…</option></select>
+          <button class="btn" id="cmpGroupAdd" style="flex:1;padding:5px 8px;font-size:12px" title="このカテゴリーの会社を、選んでいる会社に加える">選択に追加</button>
+          <button class="btn" id="cmpGroupSet" style="flex:1;padding:5px 8px;font-size:12px" title="選んでいる会社を、このカテゴリーの会社だけにする">選択を入れ替え</button>
         </div>
+        <div id="cmpGroupInfo" class="ginfo" style="display:none"></div>
         <div id="cmpList" class="cmplist"></div>
         <div id="cmpSel" class="cmpsel"></div>
         <div class="field"><span>グラフ</span><select id="cmpView" style="width:190px">
@@ -1830,6 +1833,41 @@ async function mcpTool(mcp, tool, id, extra) {
 }
 const q = t => "'" + String(t).replace(/'/g, "''") + "'";
 
+/* ---------- カテゴリーの決算発表の進み具合（マスターの「決算日」列を使う） ---------- */
+function parseYmd(t) {
+  const m = half(t || '').match(/(\d{4})\s*[\/\-年.]\s*(\d{1,2})\s*[\/\-月.]\s*(\d{1,2})/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+}
+const today0 = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
+const md = d => `${d.getMonth() + 1}/${d.getDate()}`;
+const WD = '日月火水木金土';
+function groupStatus(nm) {
+  const list = CMP.companies.filter(c => (c.groups || []).includes(nm)), t0 = today0();
+  const done = list.filter(c => c.ed && c.ed <= t0).sort((a, b) => a.ed - b.ed);
+  const wait = list.filter(c => c.ed && c.ed > t0).sort((a, b) => a.ed - b.ed);
+  const none = list.filter(c => !c.ed);
+  return { list, done, wait, none, dated: done.length + wait.length };
+}
+function showGroupInfo() {
+  const box = $('#cmpGroupInfo'), nm = $('#cmpGroup').value;
+  if (!nm) { box.style.display = 'none'; return; }
+  const st = groupStatus(nm), t0 = today0(), n = st.list.length;
+  const days = d => Math.round((d - t0) / 864e5);
+  const line = c => `<li>${esc(cmpName(c))}　${md(c.ed)}（${WD[c.ed.getDay()]}）${c.ed > t0 ? `・あと${days(c.ed)}日` : ''}</li>`;
+  let head;
+  if (!st.dated) head = `<b>${esc(nm)}</b>：マスターに決算日が入っていません`;
+  else if (!st.wait.length && !st.none.length) head = `<b class="done">${esc(nm)}：全${n}社の最新決算が発表済み</b>（最後は ${esc(cmpName(st.done[st.done.length - 1]))} ${md(st.done[st.done.length - 1].ed)}）`;
+  else {
+    const last = st.wait[st.wait.length - 1];
+    head = `<b>${esc(nm)}</b>：発表済み <b>${st.done.length}/${n}社</b>` +
+      (last ? `<br><b class="wait">全社そろう見込み：${last.ed.getFullYear()}/${md(last.ed)}（${WD[last.ed.getDay()]}）・あと${days(last.ed)}日</b>` : '') +
+      (st.none.length ? `<br><span class="wait">決算日が未登録：${st.none.map(c => esc(cmpName(c))).join('、')}</span>` : '');
+  }
+  const body = (st.wait.length ? `<div style="margin-top:4px">これから発表</div><ul>${st.wait.map(line).join('')}</ul>` : '') +
+    (st.done.length ? `<details style="margin-top:2px"><summary>発表済み（${st.done.length}社）</summary><ul>${[...st.done].reverse().map(line).join('')}</ul></details>` : '');
+  box.innerHTML = head + body;
+  box.style.display = '';
+}
 async function loadMaster() {
   if (IS_WEB) { setStatus('この版では会社比較を使えません。Claude 上のページか Apps Script 版をお使いください。', true); return; }
   const url = $('#masterUrl').value.trim() || DEFAULT_MASTER;
@@ -1849,7 +1887,7 @@ async function loadMaster() {
     const hi = rows.findIndex(r => r.some(c => String(c).trim() === 'Financials'));
     const h = rows[hi].map(c => String(c).trim());
     const ci = (...names) => h.findIndex(x => names.includes(x));
-    const C = { tk: ci('Ticker'), en: ci('企業名'), ja: ci('日本名'), c1: ci('業種カテゴリー1'), c2: ci('業種カテゴリー2'), hq: ci('本拠地'), fy: ci('決算期'), cur: ci('通貨'), fin: ci('Financials') };
+    const C = { tk: ci('Ticker'), en: ci('企業名'), ja: ci('日本名'), c1: ci('業種カテゴリー1'), c2: ci('業種カテゴリー2'), hq: ci('本拠地'), fy: ci('決算期'), ed: ci('決算日'), cur: ci('通貨'), fin: ci('Financials') };
     if (C.fin < 0) C.fin = 27;  // AB列
     // カテゴリー（AV〜EE 列。見出しがカテゴリー名、各社の行に 1 が入っていればその仲間）
     const colN = a => a.split('').reduce((x, ch) => x * 26 + ch.charCodeAt(0) - 64, 0) - 1;
@@ -1861,12 +1899,17 @@ async function loadMaster() {
       if (!fid || seen.has(fid)) return null; seen.add(fid);
       const g = i => i >= 0 ? String(r[i] ?? '').trim() : '';
       const groups = groupCols.filter(([j]) => /^(1|1\.0|true|○|◯|〇|✓)$/i.test(String(r[j] ?? '').trim())).map(([, nm]) => nm);
-      return { id: fid, tk: g(C.tk), en: g(C.en), ja: g(C.ja), c1: g(C.c1), c2: g(C.c2), hq: g(C.hq), fy: g(C.fy), cur: g(C.cur), groups };
+      return { id: fid, tk: g(C.tk), en: g(C.en), ja: g(C.ja), c1: g(C.c1), c2: g(C.c2), hq: g(C.hq), fy: g(C.fy), cur: g(C.cur), ed: parseYmd(g(C.ed)), groups };
     }).filter(Boolean);
     // 同じ名前の列が複数あってもまとめて1つのカテゴリーにする（並びはシートの列順）
     const gNames = [...new Set(groupCols.map(([, nm]) => nm))];
     const gCount = nm => CMP.companies.filter(c => c.groups.includes(nm)).length;
-    $('#cmpGroup').innerHTML = '<option value="">カテゴリーでまとめて選ぶ…</option>' + gNames.map(nm => { const n = gCount(nm); return n ? `<option value="${esc(nm)}">${esc(nm)}（${n}社）</option>` : ''; }).join('');
+    $('#cmpGroup').innerHTML = '<option value="">カテゴリーでまとめて選ぶ…</option>' + gNames.map(nm => {
+      const n = gCount(nm); if (!n) return '';
+      const st = groupStatus(nm);
+      return `<option value="${esc(nm)}">${esc(nm)}（${n}社${st.dated ? `・発表済み ${st.done.length}/${n}` : ''}）</option>`;
+    }).join('');
+    showGroupInfo();
     const cats = [...new Set(CMP.companies.map(c => c.c1).filter(Boolean))];
     $('#cmpCat').innerHTML = '<option value="">すべての業種</option>' + cats.map(c => `<option>${esc(c)}</option>`).join('');
     $('#cmpPicker').style.display = '';
@@ -1880,7 +1923,7 @@ const cmpName = c => c.ja || c.en || c.tk;
 function renderCmpList() {
   const f = half($('#cmpFilter').value).trim().toLowerCase(), cat = $('#cmpCat').value;
   const list = CMP.companies.filter(c => (!cat || c.c1 === cat) && (!f || [c.tk, c.en, c.ja, c.c2].join(' ').toLowerCase().includes(f))).slice(0, 300);
-  $('#cmpList').innerHTML = list.map(c => `<label><input type="checkbox" data-id="${c.id}" ${CMP.sel.includes(c.id) ? 'checked' : ''}><span>${esc(cmpName(c))}<br><small>${esc([c.c2 || c.c1, c.hq].filter(Boolean).join('・'))}</small></span><span class="tk">${esc(c.tk)}</span></label>`).join('') || '<div class="note" style="padding:10px">該当する会社がありません</div>';
+  $('#cmpList').innerHTML = list.map(c => `<label><input type="checkbox" data-id="${c.id}" ${CMP.sel.includes(c.id) ? 'checked' : ''}><span>${esc(cmpName(c))}<br><small>${esc([c.c2 || c.c1, c.hq, c.ed ? '決算 ' + md(c.ed) + (c.ed > today0() ? '（予定）' : '') : ''].filter(Boolean).join('・'))}</small></span><span class="tk">${esc(c.tk)}</span></label>`).join('') || '<div class="note" style="padding:10px">該当する会社がありません</div>';
 }
 function renderCmpSel() {
   const byId = Object.fromEntries(CMP.companies.map(c => [c.id, c]));
@@ -2329,6 +2372,7 @@ function bindCompare() {
     renderCmpSel(); renderCmpList();
     toast(replace ? `「${nm}」の ${ids.length} 社を選びました` : `「${nm}」から ${CMP.sel.length - before} 社を追加しました（計 ${CMP.sel.length} 社）`);
   };
+  $('#cmpGroup').onchange = showGroupInfo;
   $('#cmpGroupAdd').onclick = () => pickGroup(false);
   $('#cmpGroupSet').onclick = () => pickGroup(true);
   $('#cmpAlign').onchange = e => { CMP.align = e.target.value; buildCompare(); };
