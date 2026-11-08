@@ -42,6 +42,7 @@ const master = [['', '', 'IR資料のまとめ'],
   ['1', 'AAA', 'Alpha Corp', 'アルファ', ...Array(23).fill(''), 'https://docs.google.com/spreadsheets/d/COMPANY_A_0123456789abcdef/edit', ...Array(16).fill(''), '12月', '', '円'],
   ['3', 'CCC', 'Gamma Shoji', 'ガンマ商事', ...Array(23).fill(''), 'https://docs.google.com/spreadsheets/d/COMPANY_C_0123456789abcdef/edit', ...Array(16).fill(''), '3月', '', '円'],
   ['2', 'BBB', 'Beta Inc', 'ベータ', ...Array(23).fill(''), 'https://docs.google.com/spreadsheets/d/COMPANY_B_0123456789abcdef/edit', ...Array(16).fill(''), '1月', '', 'ドル']];
+master[1][47] = 'AI'; master[1][48] = '海運'; master[2][47] = '1'; master[3][48] = '1'; master[4][47] = '1';
 master[1][7] = '業種カテゴリー1'; master[2][7] = 'AI'; master[3][7] = '総合商社'; master[4][7] = 'AI';
 const BOOKS = { [MASTER_ID]: [{ name: 'global_company_watch_300', rows: master }], COMPANY_A_0123456789abcdef: companyBook('JPY', 10), COMPANY_B_0123456789abcdef: companyBook('USD', 1), COMPANY_C_0123456789abcdef: companyBook('JPY', 8, 'profit_before_tax'), SHEET_ID_0123456789abcdefgh: companyBook('JPY', 10) };
 const sheetOf = (id, a1) => { const nm = a1.replace(/!.*$/, '').replace(/^'|'$/g, '').replace(/''/g, "'"); return ((BOOKS[id] || []).find(t => t.name === nm) || {}).rows || null; };
@@ -157,7 +158,11 @@ console.log('3. Claude 版：会社比較');
   await p.click('#loadMaster');
   await p.waitForTimeout(800);
   ok(/3社/.test(await status(p)), 'マスターの会社一覧を読む');
-  for (const el of await p.$$('#cmpList input[type=checkbox]')) await el.click();
+  ok(await p.$eval('#cmpGroup', e => [...e.options].map(o => o.text).join('|')) === 'カテゴリーでまとめて選ぶ…|AI（2社）|海運（1社）', 'AV〜EE 列のカテゴリーを読む');
+  await p.selectOption('#cmpGroup', '海運'); await p.click('#cmpGroupSet');
+  ok(await p.evaluate(() => CMP.sel.length === 1 && CMP.companies.find(c => c.id === CMP.sel[0]).ja === 'ガンマ商事'), '「入れ替え」でカテゴリーの会社だけを選ぶ');
+  await p.selectOption('#cmpGroup', 'AI'); await p.click('#cmpGroupAdd');
+  ok(await p.evaluate(() => CMP.sel.length === 3) && await p.$$eval('#cmpList input:checked', a => a.length) === 3, '「追加」で今の選択に加える（一覧のチェックにも反映）');
   await p.click('#cmpGo');
   await p.waitForTimeout(1000);
   ok(/3社 を読み込みました/.test(await status(p)), '3社を比較表示');

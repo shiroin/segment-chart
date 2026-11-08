@@ -164,6 +164,11 @@ body.gas .nogas{display:none!important}
           <input type="text" id="cmpFilter" placeholder="社名・ティッカーで検索" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12px">
           <select id="cmpCat" style="width:110px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:12px"></select>
         </div>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <select id="cmpGroup" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:12px;padding:5px 4px"><option value="">カテゴリーでまとめて選ぶ…</option></select>
+          <button class="btn" id="cmpGroupAdd" style="padding:5px 8px;font-size:12px" title="このカテゴリーの会社を、選んでいる会社に加える">追加</button>
+          <button class="btn" id="cmpGroupSet" style="padding:5px 8px;font-size:12px" title="選んでいる会社を、このカテゴリーの会社だけにする">入れ替え</button>
+        </div>
         <div id="cmpList" class="cmplist"></div>
         <div id="cmpSel" class="cmpsel"></div>
         <div class="field"><span>グラフ</span><select id="cmpView" style="width:190px">
@@ -1837,7 +1842,7 @@ async function loadMaster() {
     const order = [...titles.filter(t => /company|watch|master|マスター|一覧/i.test(t)), ...titles].filter((t, i, a) => a.indexOf(t) === i).slice(0, 4);
     let rows = null;
     for (const t of order) {
-      const r = (await readRanges(id, [q(t) + '!A1:AZ3000']))[q(t) + '!A1:AZ3000'];
+      const r = (await readRanges(id, [q(t) + '!A1:EZ3000']))[q(t) + '!A1:EZ3000'];
       if (r && r.slice(0, 10).some(row => row.some(c => String(c).trim() === 'Financials'))) { rows = r; break; }
     }
     if (!rows) { setStatus('企業マスターに「Financials」列が見つかりませんでした', true); return; }
@@ -1846,13 +1851,22 @@ async function loadMaster() {
     const ci = (...names) => h.findIndex(x => names.includes(x));
     const C = { tk: ci('Ticker'), en: ci('企業名'), ja: ci('日本名'), c1: ci('業種カテゴリー1'), c2: ci('業種カテゴリー2'), hq: ci('本拠地'), fy: ci('決算期'), cur: ci('通貨'), fin: ci('Financials') };
     if (C.fin < 0) C.fin = 27;  // AB列
+    // カテゴリー（AV〜EE 列。見出しがカテゴリー名、各社の行に 1 が入っていればその仲間）
+    const colN = a => a.split('').reduce((x, ch) => x * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+    const groupCols = [];
+    for (let j = colN('AV'); j <= colN('EE'); j++) if (h[j]) groupCols.push([j, h[j]]);
     const seen = new Set();
     CMP.companies = rows.slice(hi + 1).map(r => {
       const fin = String(r[C.fin] || ''); const fid = sheetIdFrom(fin);
       if (!fid || seen.has(fid)) return null; seen.add(fid);
       const g = i => i >= 0 ? String(r[i] ?? '').trim() : '';
-      return { id: fid, tk: g(C.tk), en: g(C.en), ja: g(C.ja), c1: g(C.c1), c2: g(C.c2), hq: g(C.hq), fy: g(C.fy), cur: g(C.cur) };
+      const groups = groupCols.filter(([j]) => /^(1|1\.0|true|○|◯|〇|✓)$/i.test(String(r[j] ?? '').trim())).map(([, nm]) => nm);
+      return { id: fid, tk: g(C.tk), en: g(C.en), ja: g(C.ja), c1: g(C.c1), c2: g(C.c2), hq: g(C.hq), fy: g(C.fy), cur: g(C.cur), groups };
     }).filter(Boolean);
+    // 同じ名前の列が複数あってもまとめて1つのカテゴリーにする（並びはシートの列順）
+    const gNames = [...new Set(groupCols.map(([, nm]) => nm))];
+    const gCount = nm => CMP.companies.filter(c => c.groups.includes(nm)).length;
+    $('#cmpGroup').innerHTML = '<option value="">カテゴリーでまとめて選ぶ…</option>' + gNames.map(nm => { const n = gCount(nm); return n ? `<option value="${esc(nm)}">${esc(nm)}（${n}社）</option>` : ''; }).join('');
     const cats = [...new Set(CMP.companies.map(c => c.c1).filter(Boolean))];
     $('#cmpCat').innerHTML = '<option value="">すべての業種</option>' + cats.map(c => `<option>${esc(c)}</option>`).join('');
     $('#cmpPicker').style.display = '';
@@ -2306,6 +2320,17 @@ function bindCompare() {
   $('#cmpList').onchange = e => { const id = e.target.dataset.id; if (!id) return; CMP.sel = e.target.checked ? [...CMP.sel, id] : CMP.sel.filter(x => x !== id); renderCmpSel(); };
   $('#cmpSel').onclick = e => { const id = e.target.dataset && e.target.dataset.id; if (!id) return; CMP.sel = CMP.sel.filter(x => x !== id); renderCmpSel(); renderCmpList(); };
   $('#cmpGo').onclick = runCompare;
+  // カテゴリーでまとめて選ぶ：追加＝今の選択に加える／入れ替え＝そのカテゴリーの会社だけにする
+  const pickGroup = replace => {
+    const nm = $('#cmpGroup').value; if (!nm) { toast('カテゴリーを選んでください'); return; }
+    const ids = CMP.companies.filter(c => (c.groups || []).includes(nm)).map(c => c.id);
+    const before = CMP.sel.length;
+    CMP.sel = replace ? ids : [...new Set([...CMP.sel, ...ids])];
+    renderCmpSel(); renderCmpList();
+    toast(replace ? `「${nm}」の ${ids.length} 社を選びました` : `「${nm}」から ${CMP.sel.length - before} 社を追加しました（計 ${CMP.sel.length} 社）`);
+  };
+  $('#cmpGroupAdd').onclick = () => pickGroup(false);
+  $('#cmpGroupSet').onclick = () => pickGroup(true);
   $('#cmpAlign').onchange = e => { CMP.align = e.target.value; buildCompare(); };
   $('#cmpView').onchange = e => {
     CMP.view = e.target.value;
