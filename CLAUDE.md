@@ -53,6 +53,8 @@ Google スプレッドシートの業績データ（セグメント別／会社�
 
 主な設定キー（日本語・英語どちらも可）：企業名 `company_name`、タイトル（`{企業名}` `{区分}` `{単位}` `{通貨}` を置換）、`company_subtitle`、通貨 `input_currency`、データの単位、表示単位 `display_unit`、表示通貨・換算レート、注記 `note`、凡例、利益率線の色 `margin_color`、`revenue_color` / `operating_profit_color`（会社全体の色）、会社全体を表示、表示区分、表示四半期数、表示年数、抜けた期を空ける、目盛り（共通／グラフごと）、縦横比、幅・高さ、左軸最大、右軸最大、左軸最小・右軸最小（0 以下。指定するとその深さで切り、範囲外の最新値は ▼▲ 付きで端に表示）、パレット。
 
+**「シート」タブで企業マスターから選ぶ**：「企業マスターから会社を選ぶ」で `loadMaster` を呼び（マスターの URL は会社比較タブの欄＝保存値か `DEFAULT_MASTER`）、`#sheetList` にチェック形式の一覧を出す。絞り込みは社名検索と、カテゴリー（AV〜EE 列）・業種カテゴリー1。チェックは 1 社だけ（`pickSheetCompany`）。チェックするとその会社の Financials の URL を `#sheetUrl` に入れて `loadFromSheet(false)`（キャッシュを使う）。GitHub Pages 版では出さない。
+
 ## 会社比較モード
 
 企業マスター（既定は `DEFAULT_MASTER`。`Financials` 列＝AB 列に各社シートの URL）から会社を選び、各社の `設定` と `会社全体_四半期/年度` を読み、1 社 1 パネルで並べる。

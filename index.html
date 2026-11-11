@@ -155,6 +155,17 @@ body.gas .nogas{display:none!important}
       <input type="text" id="sheetUrl" list="recentSheets" placeholder="https://docs.google.com/spreadsheets/d/…" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:7px 8px;font:inherit;font-size:12px;margin-bottom:6px">
       <datalist id="recentSheets"></datalist>
       <button class="btn primary full" id="reloadSheet">読み込む / 再読み込み</button>
+      <div class="noweb" style="margin-top:10px">
+        <button class="btn full" id="sheetPickOpen">企業マスターから会社を選ぶ</button>
+        <div id="sheetPick" style="display:none;margin-top:8px">
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <input type="text" id="sheetFilter" placeholder="社名・ティッカーで検索" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12px">
+            <select id="sheetCat" style="width:120px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:12px"></select>
+          </div>
+          <div id="sheetList" class="cmplist"></div>
+          <p class="note" style="margin-top:6px">チェックを入れた会社の Financials（セグメント別の業績）を読み込みます。</p>
+        </div>
+      </div>
     </div>
     <div class="pane" data-pane="cmp">
       <p class="note">企業マスターから会社を選ぶと、各社の Financials（会社全体_四半期／年度）を読み込み、全社の売上高・営業利益を並べて比較します。</p>
@@ -1921,10 +1932,39 @@ async function loadMaster() {
   finally { btn.disabled = false; }
 }
 const cmpName = c => c.ja || c.en || c.tk;
+/* ---------- 「シート」タブ：企業マスターから1社を選んで、その会社の Financials を開く ---------- */
+const cmpRowHtml = (c, checked) => `<label><input type="checkbox" data-id="${c.id}" ${checked ? 'checked' : ''}><span>${esc(cmpName(c))}<br><small>${esc([c.c2 || c.c1, c.hq, c.ed ? '決算 ' + md(c.ed) + (c.ed > today0() ? '（予定）' : '') : ''].filter(Boolean).join('・'))}</small></span><span class="tk">${esc(c.tk)}</span></label>`;
+async function openSheetPick() {
+  const box = $('#sheetPick');
+  if (box.style.display === '' && CMP.companies.length) { box.style.display = 'none'; $('#sheetPickOpen').textContent = '企業マスターから会社を選ぶ'; return; }
+  if (!CMP.companies.length) { $('#sheetPickOpen').disabled = true; try { await loadMaster(); } finally { $('#sheetPickOpen').disabled = false; } }
+  if (!CMP.companies.length) return;
+  // 絞り込み：マスターの AV〜EE 列のカテゴリーと、業種カテゴリー1
+  const groups = [...new Set(CMP.companies.flatMap(c => c.groups || []))];
+  const c1s = [...new Set(CMP.companies.map(c => c.c1).filter(Boolean))].filter(x => !groups.includes(x));
+  $('#sheetCat').innerHTML = '<option value="">すべて</option>' + groups.map(g => `<option value="g:${esc(g)}">${esc(g)}</option>`).join('') + c1s.map(g => `<option value="c:${esc(g)}">${esc(g)}</option>`).join('');
+  box.style.display = ''; $('#sheetPickOpen').textContent = '一覧を閉じる';
+  setStatus(`<b>${CMP.companies.length}社</b> から選べます。チェックを入れた会社を読み込みます。`);
+  renderSheetList();
+}
+function renderSheetList() {
+  const f = half($('#sheetFilter').value).trim().toLowerCase(), cat = $('#sheetCat').value, cur = sheetIdFrom($('#sheetUrl').value);
+  const list = CMP.companies.filter(c => (!cat || (cat.startsWith('g:') ? (c.groups || []).includes(cat.slice(2)) : c.c1 === cat.slice(2))) &&
+    (!f || [c.tk, c.en, c.ja, c.c2].join(' ').toLowerCase().includes(f))).slice(0, 400);
+  $('#sheetList').innerHTML = list.map(c => cmpRowHtml(c, c.id === cur)).join('') || '<div class="note" style="padding:10px">該当する会社がありません</div>';
+}
+function pickSheetCompany(e) {
+  const id = e.target.dataset && e.target.dataset.id; if (!id) return;
+  // 1社だけ選べる（ほかのチェックは外す）
+  $('#sheetList').querySelectorAll('input[type=checkbox]').forEach(x => { if (x !== e.target) x.checked = false; });
+  if (!e.target.checked) { e.target.checked = true; return; }
+  $('#sheetUrl').value = `https://docs.google.com/spreadsheets/d/${id}/edit`;
+  loadFromSheet(false);
+}
 function renderCmpList() {
   const f = half($('#cmpFilter').value).trim().toLowerCase(), cat = $('#cmpCat').value;
   const list = CMP.companies.filter(c => (!cat || c.c1 === cat) && (!f || [c.tk, c.en, c.ja, c.c2].join(' ').toLowerCase().includes(f))).slice(0, 300);
-  $('#cmpList').innerHTML = list.map(c => `<label><input type="checkbox" data-id="${c.id}" ${CMP.sel.includes(c.id) ? 'checked' : ''}><span>${esc(cmpName(c))}<br><small>${esc([c.c2 || c.c1, c.hq, c.ed ? '決算 ' + md(c.ed) + (c.ed > today0() ? '（予定）' : '') : ''].filter(Boolean).join('・'))}</small></span><span class="tk">${esc(c.tk)}</span></label>`).join('') || '<div class="note" style="padding:10px">該当する会社がありません</div>';
+  $('#cmpList').innerHTML = list.map(c => cmpRowHtml(c, CMP.sel.includes(c.id))).join('') || '<div class="note" style="padding:10px">該当する会社がありません</div>';
 }
 function renderCmpSel() {
   const byId = Object.fromEntries(CMP.companies.map(c => [c.id, c]));
@@ -2364,6 +2404,10 @@ function bindCompare() {
   $('#cmpList').onchange = e => { const id = e.target.dataset.id; if (!id) return; CMP.sel = e.target.checked ? [...CMP.sel, id] : CMP.sel.filter(x => x !== id); renderCmpSel(); };
   $('#cmpSel').onclick = e => { const id = e.target.dataset && e.target.dataset.id; if (!id) return; CMP.sel = CMP.sel.filter(x => x !== id); renderCmpSel(); renderCmpList(); };
   $('#cmpGo').onclick = runCompare;
+  $('#sheetPickOpen').onclick = openSheetPick;
+  $('#sheetFilter').oninput = renderSheetList;
+  $('#sheetCat').onchange = renderSheetList;
+  $('#sheetList').onchange = pickSheetCompany;
   // カテゴリーでまとめて選ぶ：追加＝今の選択に加える／入れ替え＝そのカテゴリーの会社だけにする
   const pickGroup = replace => {
     const nm = $('#cmpGroup').value; if (!nm) { toast('カテゴリーを選んでください'); return; }
@@ -2399,7 +2443,7 @@ function bindCompare() {
    ========================================================= */
 (function init() { try {
   // 版の表示（build 時に日時が入る。Apps Script 版は取得元も出す）
-  const BUILD = '2026-11-08 17:13';
+  const BUILD = '2026-11-11 22:02';
   const showVer = () => {   // Apps Script が後ろに付ける目印（__PAGE_SRC）はページの最後で読まれるので、読み込み後に表示する
     const src = window.__PAGE_SRC === 'github' ? '・GitHubから取得' : window.__PAGE_SRC === 'local' ? '・Apps Script内の古いindex（Code.gsを更新してください）' : IS_GAS ? '・取得元不明（Code.gsが古い可能性）' : '';
     $('#ver').textContent = (BUILD.indexOf('BUILD') < 0 ? '版 ' + BUILD : '') + src;

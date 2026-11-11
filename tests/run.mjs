@@ -216,6 +216,28 @@ console.log('3. Claude 版：会社比較');
   await p.close();
 }
 
+console.log('3b. Claude 版：「シート」タブで企業マスターから1社を選ぶ');
+{
+  const { p, errs } = await page(browser, SRC, mcpMock);
+  await p.click('#tabs button[data-tab="cmp"]');
+  await p.fill('#masterUrl', `https://docs.google.com/spreadsheets/d/${MASTER_ID}/edit`);
+  await p.click('#tabs button[data-tab="sheet"]');
+  await p.click('#sheetPickOpen');
+  await p.waitForTimeout(800);
+  ok(await p.$$eval('#sheetList input', a => a.length) === 3, 'シートタブにマスターの会社一覧を出す');
+  await p.selectOption('#sheetCat', 'g:海運');
+  ok(await p.$$eval('#sheetList input', a => a.length) === 1, 'カテゴリーで絞り込める');
+  await p.selectOption('#sheetCat', '');
+  const boxes = await p.$$('#sheetList input');
+  await boxes[0].click(); await p.waitForTimeout(800);
+  ok(/3セグメント/.test(await status(p)) && /COMPANY_A/.test(await p.$eval('#sheetUrl', e => e.value)), 'チェックした会社の Financials を読み込む: ' + (await status(p)).split('\n')[0]);
+  await (await p.$$('#sheetList input'))[2].click(); await p.waitForTimeout(800);
+  ok(await p.$$eval('#sheetList input:checked', a => a.length) === 1 && /COMPANY_B/.test(await p.$eval('#sheetUrl', e => e.value)), '1社だけ選べる（別の会社に切り替わる）');
+  await p.screenshot({ path: SHOTS + '2b-sheet-pick.png' });
+  ok(!errs.length, 'エラーなし ' + errs.join(' / '));
+  await p.close();
+}
+
 console.log('4. Apps Script 版');
 {
   const { p, errs } = await page(browser, GAS, gasMock);
