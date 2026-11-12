@@ -263,6 +263,7 @@ body.gas .nogas{display:none!important}
     <div class="stack"><span>企業名</span><input type="text" id="oCompany" placeholder="例: 信越化学"></div>
     <div class="stack"><span>タイトル <small style="color:var(--mute)">（空欄で「企業名 セグメント別業績推移」）</small></span><input type="text" id="oTitle" placeholder="{企業名}　セグメント別業績推移"></div>
     <div class="stack"><span>注記 <small style="color:var(--mute)">（左下に表示。出所など）</small></span><input type="text" id="oNote" placeholder="例: 出所：決算説明資料"></div>
+    <div class="field"><span>グラフの形</span><select id="oLayout"><option value="panels">セグメントごとに並べる</option><option value="stackO">積み上げ（利益）</option><option value="stackS">積み上げ（売上高）</option></select></div>
     <div class="field"><span>表示する棒</span><select id="oBars"><option value="both">売上高と営業利益</option><option value="sales">売上高だけ</option><option value="op">営業利益だけ</option></select></div>
     <div class="field"><span>凡例</span><select id="oLegend"><option value="top">上（タイトル横）</option><option value="bottom">下</option><option value="none">表示しない</option></select></div>
     <div class="field"><span>営業利益率の線</span><label class="sw-toggle"><input type="checkbox" id="oMargin"><i></i></label></div>
@@ -660,7 +661,7 @@ function buildModel(tables, paletteName) {
    状態
    ========================================================= */
 const O = {
-  title: '', company: '', note: '', unit: '', cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null, legend: 'top', bars: 'both', showMargin: true, showLast: true, showLastBar: false,
+  title: '', company: '', note: '', unit: '', cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null, legend: 'top', layout: 'panels', bars: 'both', showMargin: true, showLast: true, showLastBar: false,
   marginColor: '#c0151f', height: 560, ratio: 'fit', rw: 16, rh: 9, pw: 1280, ph: 720, yMax: null, rMax: null, yMin: null, rMin: null, nQ: 20, endIdx: null, fillGaps: true, axisMode: 'shared',
 };
 let M = null, SOURCE = '';
@@ -764,6 +765,7 @@ function applyConfig(cfg) {
     else if (/画面|自動|fit|auto/i.test(v)) O.ratio = 'fit';
   }
   if ((v = g('幅','width')) != null && num(v)) { O.ratio = 'px'; O.pw = clamp(num(v), 360, 4000); O.ph = O.ph || O.height; }
+  if ((v = g('グラフの形','グラフの種類','layout','chart_type')) != null) { const t = half(v).replace(/\s/g, '').toLowerCase(); O.layout = /積み上げ.*売上|stack.*(sales|revenue)/.test(t) ? 'stackS' : /積み上げ|stack/.test(t) ? 'stackO' : 'panels'; }
   if ((v = g('表示する棒','表示する値','棒グラフ','bars','show_bars')) != null) { const b = parseBars(v); if (b) O.bars = b; }
   if ((v = g('営業利益率','利益率','利益率の線','showmargin')) != null) O.showMargin = !/^(false|0|off|no|なし|非表示)$/i.test(v);
   if ((v = g('最新の利益率','最新値','showlast')) != null) O.showLast = !/^(false|0|off|no|なし|非表示)$/i.test(v);
@@ -912,6 +914,7 @@ function render() {
   const host = $('#chart');
   if (!M) return;
   if (SOURCE === 'compare' && CMP.view && CMP.view !== 'trend' && CMP.loaded && CMP.loaded.some(x => x.r.seg)) { $('#tip').style.opacity = 0; return renderSegView(); }
+  if (SOURCE !== 'compare' && (O.layout === 'stackO' || O.layout === 'stackS')) { $('#tip').style.opacity = 0; return renderStackTrend(); }
   $('#tip').style.opacity = 0;
   const hasTot = !!(M.total && M.total.visible && M.values[TOTAL]);
   const segs = [...(hasTot ? [M.total] : []), ...M.segs.filter(s => s.visible)];
@@ -1211,7 +1214,7 @@ function syncControls() {
   $('#oAxisMode').value = O.axisMode || 'shared';
   $('#oTitle').value = O.title; $('#oCompany').value = O.company || ''; $('#oNote').value = O.note || ''; $('#oLegend').value = O.legend;
   syncUnits();
-  $('#oBars').value = O.bars || 'both'; $('#oMargin').checked = O.showMargin; $('#oLast').checked = O.showLast; $('#oLastBar').checked = O.showLastBar;
+  $('#oLayout').value = O.layout || 'panels'; $('#oBars').value = O.bars || 'both'; $('#oMargin').checked = O.showMargin; $('#oLast').checked = O.showLast; $('#oLastBar').checked = O.showLastBar;
   $('#oMColor').value = O.marginColor; $('#oH').value = O.height; $('#oHv').textContent = O.height;
   syncSize();
   $('#oYMax').value = O.yMax || ''; $('#oRMax').value = O.rMax || '';
@@ -1276,7 +1279,7 @@ function bindResize() {
   window.addEventListener('pointerup', () => { if (!drag) return; drag = null; persistOpt(); scheduleRender(); });
 }
 function persistOpt() {
-  store.save({ opt: { bars: O.bars, legend: O.legend, showMargin: O.showMargin, showLast: O.showLast, showLastBar: O.showLastBar, marginColor: O.marginColor, height: O.height, ratio: O.ratio, rw: O.rw, rh: O.rh, pw: O.pw, ph: O.ph } });
+  store.save({ opt: { layout: O.layout, bars: O.bars, legend: O.legend, showMargin: O.showMargin, showLast: O.showLast, showLastBar: O.showLastBar, marginColor: O.marginColor, height: O.height, ratio: O.ratio, rw: O.rw, rh: O.rh, pw: O.pw, ph: O.ph } });
 }
 /* 利益率の線のオン／オフボタン（セグメント・会社ごと） */
 const mgBtn = s => `<button class="mg${s.showMargin === false ? ' off' : ''}" title="営業利益率の線を${s.showMargin === false ? '表示する' : '消す'}"><svg width="18" height="12" viewBox="0 0 18 12"><path d="M1 9 L6 5 L11 7 L17 2" fill="none" stroke="${esc(O.marginColor)}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
@@ -1359,6 +1362,7 @@ function bindControls() {
   on('#oDispCur', 'change', e => { O.dispCur = e.target.value === O.cur ? 'same' : e.target.value; O.fx = null; uChg(); });
   on('#oFx', 'input', e => { O.fx = num(e.target.value) > 0 ? num(e.target.value) : null; syncUnits(); scheduleRender(); });
   on('#oLegend', 'change', e => { O.legend = e.target.value; render(); persist(); });
+  on('#oLayout', 'change', e => { O.layout = e.target.value; render(); persist(); });
   on('#oBars', 'change', e => { O.bars = e.target.value; render(); persist(); });
   on('#oMargin', 'change', e => { O.showMargin = e.target.checked; render(); persist(); });
   on('#oLast', 'change', e => { O.showLast = e.target.checked; render(); persist(); });
@@ -1804,6 +1808,128 @@ async function downloadTemplate() {
     const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
     saveFile('segment_chart_template.xlsx', new Blob([buf]));
   } catch (e) { toast('テンプレートを作成できませんでした'); }
+}
+
+/* =========================================================
+   1社の「セグメント積み上げ」推移（O.layout = 'stackO' 利益 / 'stackS' 売上）
+   各期 1 本の棒に、表示中のセグメントを積む（プラスは上へ、マイナスは下へ）。色はセグメントの色（サイドバーで変更可）。
+   ========================================================= */
+function renderStackTrend() {
+  const host = $('#chart');
+  const segs = M.segs.filter(s => s.visible), per = visiblePeriods();
+  const isS = O.layout === 'stackS', key = isS ? 'sales' : 'op';
+  const hasTot = !!(M.total && M.total.visible && M.values[TOTAL]);
+  $('#footL').textContent = `${segs.length}セグメント・${per.length}${granWord()}を表示中`;
+  if (!segs.length || !per.length) { host.innerHTML = '<div class="empty">表示するセグメントを選んでください</div>'; return; }
+  const [Wpx, Hpx] = chartSize(host);
+  const F = clamp(Math.sqrt(Wpx * Hpx / (1000 * 540)), 0.62, 1.7);
+  const W = Wpx / F, HH = Hpx / F, TS = clamp(0.82 / F, 1, 1.5);
+  const FS = { leg: 14 * TS, axT: 13 * TS, tick: 12 * TS, val: 12.5 * TS, xq: 11.5 * TS, xy: 12 * TS };
+  const K = scaleK(), u = UNIT_LABEL[dispUnitValue()] || '';
+  const val = (name, p) => { const v = (M.values[name] || {})[p.key]; return v && v[key] != null ? v[key] * K : null; };
+  // 期ごとのプラス・マイナスの合計
+  const sums = per.map(p => { let pos = 0, neg = 0, any = false; segs.forEach(s => { const v = val(s.name, p); if (v == null) return; any = true; if (v > 0) pos += v; else neg += v; }); return { pos, neg, any, tot: pos + neg }; });
+  const totV = hasTot ? per.map(p => val(TOTAL, p)) : null;
+  let mx = Math.max(0, ...sums.map(x => x.pos), ...(totV || []).filter(v => v != null)), mn = Math.min(0, ...sums.map(x => x.neg), ...(totV || []).filter(v => v != null));
+  if (O.yMax > 0) mx = O.yMax; if (O.yMin != null && O.yMin < 0) mn = O.yMin;
+  const span = (mx - mn) || 1, step = niceUp(span / 6);
+  const top = Math.ceil(mx / step - 1e-9) * step || step, bot = Math.floor(mn / step + 1e-9) * step;
+  // ---- レイアウト
+  const title = (() => { const co = String(O.company || '').trim(); let t = String(O.title || '').trim(); if (!t) t = co ? `{企業名}　セグメント別${isS ? '売上高' : '損益'}（{区分}）` : ''; return t.replace(/\{(企業名|会社名|company)\}/gi, co).replace(/\{(単位|unit)\}/gi, unitText()).replace(/\{(通貨|currency)\}/gi, curLabel(effCur())).replace(/\{(区分|期間)\}/g, granWord()).replace(/セグメント別業績推移/, `セグメント別${isS ? '売上高' : '損益'}`).trim(); })();
+  const o = [];
+  o.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${Wpx}" height="${Hpx}" viewBox="0 0 ${W.toFixed(2)} ${HH.toFixed(2)}" font-family="${esc(FONT)}" style="font-family:${esc(FONT)}">`);
+  o.push(`<rect width="${W}" height="${HH}" fill="#ffffff"/>`);
+  let y = 8;
+  if (title) { const tw0 = wrapText(title, 22, 700, W - 32, 2, 14); o.push(mtext(16, y + tw0.fs + 4, tw0, 'font-weight="700" fill="#111827"', 'start')); y += tw0.h + 10; }
+  // 凡例（横に並べ、収まらなければ折り返す）
+  const colOf = s => (isS ? s.salesColor : s.opColor) || s.color;
+  const legItems = [...segs.map(s => ({ t: s.label, c: colOf(s) })), ...(hasTot ? [{ t: `${M.total.label}（合計）`, c: '#111827', dot: true }] : [])];
+  const sw = FS.leg * 0.9, gapL = 18 * TS;
+  let lx = 16, ly = y + FS.leg;
+  if (O.legend !== 'none') {
+    legItems.forEach(it => {
+      const w = sw + 6 + tw(it.t, FS.leg, 500);
+      if (lx + w > W - 16 && lx > 16) { lx = 16; ly += FS.leg * 1.5; }
+      if (it.dot) o.push(`<circle cx="${lx + sw / 2}" cy="${ly - FS.leg * 0.35}" r="${sw * 0.32}" fill="#fff" stroke="${it.c}" stroke-width="${2 * TS}"/>`);
+      else o.push(`<rect x="${lx}" y="${ly - FS.leg * 0.8}" width="${sw}" height="${sw}" rx="2" fill="${it.c}"/>`);
+      o.push(`<text x="${lx + sw + 6}" y="${ly}" font-size="${FS.leg.toFixed(1)}" font-weight="500" fill="#374151">${esc(it.t)}</text>`);
+      lx += w + gapL;
+    });
+    y = ly + FS.leg * 0.8;
+  }
+  const note = String(O.note || '').trim();
+  const pbt = M.segs.some(s => s.visible && s.pbt) || (hasTot && M.total.pbt);
+  const notes = [pbt && !isS ? `※ 「営業利益」は${PBT_LABEL}を含みます` : '', note].filter(Boolean).map(t => wrapText(t, 10, 400, W - 32, 3, 8));
+  const noteH = notes.length ? 4 + notes.reduce((a, w) => a + w.h, 0) : 0;
+  const hasYears = per.some(p => p.ylab);
+  const xLabH = 7 + FS.xq, yearH = hasYears ? 10 + FS.xy : 0;
+  const ticks = []; for (let v = bot; v <= top + step * 1e-6; v += step) ticks.push(+v.toFixed(10));
+  const tickW = Math.max(...ticks.map(v => tw(fmtN(v, step), FS.tick)));
+  const padL = tickW + FS.axT + 26, padR = 16;
+  const pTop = y + 14, pBot = HH - noteH - xLabH - yearH - 8;
+  const pH = Math.max(60, pBot - pTop), pW = W - padL - padR;
+  const yOf = v => pTop + (top - v) / (top - bot) * pH;
+  const band = pW / per.length, barW = Math.max(1, band * (per.length > 30 ? 0.8 : 0.66));
+  // 目盛り・グリッド
+  ticks.forEach(v => {
+    o.push(`<line x1="${padL}" x2="${W - padR}" y1="${yOf(v).toFixed(1)}" y2="${yOf(v).toFixed(1)}" stroke="${Math.abs(v) < step * 1e-6 ? '#6b7280' : '#eceef1'}" stroke-width="${Math.abs(v) < step * 1e-6 ? 1.4 : 1}"/>`);
+    o.push(`<text x="${padL - 8}" y="${(yOf(v) + FS.tick * 0.36).toFixed(1)}" font-size="${FS.tick.toFixed(1)}" fill="#6b7280" text-anchor="end">${fmtN(v, step)}</text>`);
+  });
+  const ut = unitText();
+  o.push(`<text transform="translate(${(6 + FS.axT).toFixed(1)} ${pTop + pH / 2}) rotate(-90)" font-size="${FS.axT.toFixed(1)}" fill="#6b7280" text-anchor="middle">${esc((isS ? '売上高' : '営業利益') + (ut ? `（${ut}）` : ''))}</text>`);
+  // 棒（セグメントの順に、プラスは0から上へ、マイナスは0から下へ積む）
+  o.push(`<defs><clipPath id="stk"><rect x="${padL}" y="${pTop - 1}" width="${pW}" height="${pH + 2}"/></clipPath></defs><g clip-path="url(#stk)">`);
+  per.forEach((p, i) => {
+    const x = padL + i * band + (band - barW) / 2;
+    let up = 0, dn = 0;
+    segs.forEach(s => {
+      const v = val(s.name, p); if (v == null || v === 0) return;
+      const a = v > 0 ? up : dn, b = a + v;
+      if (v > 0) up = b; else dn = b;
+      const y1 = yOf(Math.max(a, b)), y2 = yOf(Math.min(a, b));
+      o.push(`<rect x="${x.toFixed(2)}" y="${y1.toFixed(2)}" width="${barW.toFixed(2)}" height="${Math.max(0.5, y2 - y1).toFixed(2)}" fill="${colOf(s)}" stroke="#fff" stroke-width="${barW > 6 ? 0.6 : 0}"><title>${esc(plab(p))}　${esc(s.label)}：${fmtV(v)}${esc(u + curLabel(effCur()))}</title></rect>`);
+    });
+  });
+  o.push('</g>');
+  // 会社全体（合計）の点
+  if (hasTot) {
+    per.forEach((p, i) => { const v = totV[i]; if (v == null) return; o.push(`<circle cx="${(padL + i * band + band / 2).toFixed(2)}" cy="${yOf(v).toFixed(2)}" r="${clamp(band * 0.18, 2, 4.5 * TS).toFixed(2)}" fill="#fff" stroke="#111827" stroke-width="${1.6 * TS}"><title>${esc(plab(p))}　${esc(M.total.label)}：${fmtV(v)}${esc(u + curLabel(effCur()))}</title></circle>`); });
+  }
+  // 最新期の合計
+  if (O.showLastBar) {
+    let li = -1; per.forEach((p, i) => { if (sums[i].any) li = i; });
+    if (li >= 0) { const v = hasTot && totV[li] != null ? totV[li] : sums[li].tot, cx = padL + li * band + band / 2;
+      o.push(`<text x="${cx.toFixed(1)}" y="${(yOf(Math.max(sums[li].pos, v, 0)) - 6).toFixed(1)}" font-size="${FS.val.toFixed(1)}" font-weight="700" fill="#111827" text-anchor="${band < 30 ? 'end' : 'middle'}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtV(v)}</text>`); }
+  }
+  // 横軸：四半期と年
+  const qy = pBot + 4 + FS.xq;
+  if (per.some(p => p.q)) {
+    const need = tw('4Q', FS.xq) + 4;
+    const show = band >= need ? () => true : band * 2 >= need ? p => p.q % 2 === 1 : band * 4 >= need ? p => p.q === 1 : () => false;
+    per.forEach((p, i) => { if (show(p)) o.push(`<text x="${(padL + i * band + band / 2).toFixed(1)}" y="${qy.toFixed(1)}" font-size="${FS.xq.toFixed(1)}" fill="#6b7280" text-anchor="middle">${esc(p.qlab)}</text>`); });
+  } else {
+    const wMax = Math.max(...per.map(p => tw(p.qlab, FS.xq))) + 6, stride = Math.max(1, Math.ceil(wMax / band));
+    per.forEach((p, i) => { if ((per.length - 1 - i) % stride) return; o.push(`<text x="${(padL + i * band + band / 2).toFixed(1)}" y="${qy.toFixed(1)}" font-size="${FS.xq.toFixed(1)}" fill="#6b7280" text-anchor="middle">${esc(p.qlab)}</text>`); });
+  }
+  if (hasYears) {
+    const groups = [];
+    per.forEach((p, i) => { const g = groups[groups.length - 1]; if (g && g.lab === p.ylab) g.e = i; else groups.push({ lab: p.ylab, s: i, e: i }); });
+    const yy = pBot + xLabH + 3 + FS.xy;
+    let lastR = -1e9;
+    groups.forEach((g, gi) => {
+      const x0 = padL + g.s * band, x1 = padL + (g.e + 1) * band;
+      if (gi > 0) o.push(`<line x1="${x0.toFixed(1)}" x2="${x0.toFixed(1)}" y1="${pBot + 2}" y2="${pBot + xLabH + yearH - 2}" stroke="#d6dae0"/>`);
+      let lab = g.lab; if (tw(lab, FS.xy, 500) > x1 - x0 - 2) lab = "'" + String(lab).replace(/\D/g, '').slice(2, 4);
+      const lw = tw(lab, FS.xy, 500), cx = (x0 + x1) / 2;
+      if (cx - lw / 2 < lastR + 4) return; lastR = cx + lw / 2;
+      o.push(`<text x="${cx.toFixed(1)}" y="${yy.toFixed(1)}" font-size="${FS.xy.toFixed(1)}" font-weight="500" fill="#4b5563" text-anchor="middle">${esc(lab)}</text>`);
+    });
+  }
+  let ny = HH - noteH + 2;
+  notes.forEach(w => { o.push(mtext(16, ny + w.fs, w, 'fill="#9ca3af"', 'start')); ny += w.h; });
+  o.push('</svg>');
+  host.innerHTML = o.join('');
+  LAST = null;
 }
 
 /* =========================================================
