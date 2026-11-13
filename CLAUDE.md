@@ -82,6 +82,7 @@ Google スプレッドシートの業績データ（セグメント別／会社�
 ## コードの地図（`src/index.html` 内）
 
 - 読み取り：`parsePeriod` / `parseYear` / `num` / `parseDelimited` / `classify` / `matrixKind` / `splitTable` / `buildModel`
+- 開くときの区分：`ingest` は `segHasData(g)`（会社全体以外のセグメントに数値があるか）を見て、セグメントのデータがある区分を優先する（例：TSMC は四半期のセグメントが空で年度だけある → 年度で開き、注意を出す）。区分ボタンでデータのない方を選ぶとトーストで知らせる。
 - 状態：`O`（表示設定）、`M`（読み込んだモデル。`views.Q` / `views.Y`、`segs`、`total`）、`ingest` → `applyConfig` → `setGran`（期の絞り込みと `fillGaps`）
 - 描画：`axes`（左右の目盛りをそろえる）、`render`（SVG を文字列で組み立てる。サイズに応じて viewBox で拡大縮小）
   - 文字の大きさは `render` 内の `FS`（凡例・軸の名前・目盛り・最新値・横軸）。`TS = clamp(0.82 / F, 1, 1.5)` で、画面が小さい（スマホ）ほど大きくする。左右の余白 `padL` / `padR` は目盛りの文字幅から計算。グラフの最小幅は 260px。

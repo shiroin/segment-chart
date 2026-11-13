@@ -163,6 +163,15 @@ console.log('2. Claude 版：シートのURLから読み込み（4シート形�
   ok(await p.evaluate(() => O.marginColor === '#ff8a00' && O.note === '※ 12月決算'), 'setting/value の設定を反映');
   await p.click('#segList .segrow.total input.vis');
   ok(await p.evaluate(() => M.total.visible), '会社全体を表示できる');
+  ok(await p.evaluate(() => {
+    const t = (name, rows) => ({ name, rows: [[name], ['…'], [], ...rows] });
+    const h = ['period', 'HPC', 'Smartphone'];
+    ingest([t('会社全体_四半期', [['period', 'revenue', 'operating_profit'], ['FY2025Q1', '100', '40'], ['FY2025Q2', '110', '45']]),
+      t('会社全体_年度', [['period', 'revenue', 'operating_profit'], ['FY2024', '400', '150']]),
+      t('セグメント売上高_四半期', [h]), t('セグメント売上高_年度', [h, ['FY2024', '250', '150']]),
+      t('セグメント利益_四半期', [h]), t('セグメント利益_年度', [h])], 'sheet');
+    return M.gran === 'Y' && /年度で表示/.test(document.querySelector('#status').innerText) && document.querySelectorAll('#chart svg rect[clip-path], #chart svg g[clip-path] rect').length > 0;
+  }), '四半期のセグメントが空なら年度で開く（TSMC のような会社）');
   ok(await p.evaluate(() => { const rows = [['period', 'revenue', 'profit_before_tax'], ['FY2025Q1', '100', '10'], ['FY2025Q2', '120', '15']]; ingest([{ name: '会社全体_四半期', rows }], 't'); M.total.visible = true; render(); return M.total.pbt && [...document.querySelectorAll('#chart svg text')].some(t => /会社全体の「営業利益」は税引前当期純利益/.test(t.textContent)); }), '1社表示でも会社全体の税引前利益を読み、注意書きを出す');
   await p.screenshot({ path: SHOTS + '2-claude-sheet.png' });
   ok(!errs.length, 'エラーなし ' + errs.join(' / '));

@@ -789,7 +789,14 @@ function ingest(tables, source) {
   if (M.total) M.total.showMargin = !O.marginOff[TOTAL];
   if (M.total) { M.total.label = O.totalLabel || '会社全体'; M.total.visible = !!O.showTotal; M.total.salesColor = O.totalSales; M.total.opColor = O.totalOp; M.total.sheetSales = O.totalSales; M.total.sheetOp = O.totalOp; if (O.totalOp) { M.total.color = M.total.defaultColor = O.totalOp; } }
   const hasQ = M.views.Q.periods.length > 0, hasY = M.views.Y.periods.length > 0;
-  setGran(O.granPref === 'Y' && hasY ? 'Y' : O.granPref === 'Q' && hasQ ? 'Q' : hasQ ? 'Q' : 'Y', true);
+  // セグメントのデータがある区分を優先する（四半期は会社全体だけ・セグメントは年度だけ、という会社で会社全体しか出ないのを防ぐ）
+  const sQ = segHasData('Q'), sY = segHasData('Y');
+  let g0 = O.granPref === 'Y' && hasY ? 'Y' : O.granPref === 'Q' && hasQ ? 'Q' : hasQ ? 'Q' : 'Y';
+  if (M.segs.length && !segHasData(g0) && segHasData(g0 === 'Q' ? 'Y' : 'Q')) {
+    g0 = g0 === 'Q' ? 'Y' : 'Q';
+    M.notes.push(`${g0 === 'Y' ? '四半期' : '年度'}のセグメントのデータがないため、${g0 === 'Y' ? '年度' : '四半期'}で表示しています`);
+  } else if (M.segs.length && !sQ && !sY) M.notes.push('セグメントのシートに数値が入っていないため、会社全体だけを表示しています');
+  setGran(g0, true);
   renderSegList();
   const span = g => { const ps = M.views[g].periods; if (!ps.length) return ''; return `${ps.length}${g === 'Q' ? '四半期' : '年度'}（${esc(plab(ps[0]))} 〜 ${esc(plab(ps[ps.length - 1]))}）`; };
   setStatus(`<b>${M.segs.length}${source === 'compare' ? '社' : 'セグメント'}</b>${M.total ? '＋会社全体' : ''} を読み込みました<br>` + [span('Q'), span('Y')].filter(Boolean).join('・') +
@@ -799,6 +806,12 @@ function ingest(tables, source) {
 }
 
 /* 四半期 / 年度 の切り替え */
+// その区分（Q / Y）に、会社全体以外のセグメントの数値が1つでもあるか
+function segHasData(g) {
+  if (!M || !M.views[g]) return false;
+  const vals = M.views[g].values || {};
+  return M.segs.some(sg => Object.values(vals[sg.name] || {}).some(v => v && (v.sales != null || v.op != null)));
+}
 function setGran(g, silent) {
   if (!M || !M.views[g] || !M.views[g].periods.length) return;
   M.gran = g; M.values = M.views[g].values;
@@ -1377,7 +1390,7 @@ function bindControls() {
   on('#nQ', 'input', e => { O.nQ = +e.target.value; O.nByG = O.nByG || {}; O.nByG[M.gran] = O.nQ; $('#nQv').textContent = O.nQ; scheduleRender(); });
   on('#oAxisMode', 'change', e => { O.axisMode = e.target.value; CMP.axisChosen = true; render(); });
   on('#oGaps', 'change', e => { O.fillGaps = e.target.checked; if (M) setGran(M.gran); });
-  $('#granTabs').onclick = e => { const b = e.target.closest('button'); if (b && !b.disabled && M) setGran(b.dataset.g); };
+  $('#granTabs').onclick = e => { const b = e.target.closest('button'); if (b && !b.disabled && M) { setGran(b.dataset.g); if (M.segs.length && !segHasData(b.dataset.g)) toast(`${b.dataset.g === 'Q' ? '四半期' : '年度'}のセグメントのデータはありません（会社全体だけ表示）`); } };
   on('#endP', 'change', e => { O.endIdx = +e.target.value; if (O.nQ > O.endIdx + 1) { O.nQ = O.endIdx + 1; } syncControls(); render(); });
 
   // タブ
