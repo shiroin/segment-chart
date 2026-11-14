@@ -2428,23 +2428,35 @@ function renderSegView() {
   noteW.forEach(w => { o.push(mtext(16, ny + w.fs, w, 'fill="#9ca3af"', 'start')); ny += w.h; });
   const top = 34 + tW.h, bot = HH - noteH - 6;
   // 会社名（と元の期）を折り返して描く。y は最下行の下端
-  const headW = (it, room) => ({ n: wrapText(it.label, 16, 700, room, 2, 10), s: it.orig ? wrapText(it.orig, 10.5, 400, room, 2, 8) : null });
+  const headW = (it, room) => ({ n: wrapText(it.label, 16 * TSs, 700, room, 2, 10), s: it.orig ? wrapText(it.orig, 10.5 * TSs, 400, room, 2, 8) : null });
   const headH = hw => hw.n.h + (hw.s ? hw.s.h + 1 : 0);
   const drawHead = (it, hw, cx, yTop) => {
     o.push(mtext(cx, yTop + hw.n.fs, hw.n, `font-weight="700" fill="${shade(it.base, lum(it.base) > 0.62 ? 0.35 : 0.05)}"`));
     if (hw.s) o.push(mtext(cx, yTop + hw.n.h + 1 + hw.s.fs, hw.s, 'fill="#6b7280"'));
   };
-  const LFS = 11.5;
+  const TSs = clamp(0.82 / F, 1, 1.45);   // 画面が小さい（スマホ）ときは文字を大きく
+  const LFS = 11.5 * TSs;
   if (donut) {
-    const n = items.length, cols = n <= 2 ? n : n <= 4 ? 2 : n <= 9 ? 3 : n <= 16 ? 4 : 5, rows = Math.ceil(n / cols);
+    // 列の数は、円がいちばん大きくなるものを選ぶ（縦長の画面なら 2 列×3 段など）
+    const n = items.length;
+    let cols = 1, bestR = -1;
+    for (let c = 1; c <= Math.min(n, 6); c++) {
+      const r = Math.ceil(n / c), cR = Math.min(W / c * 0.29, ((bot - top) / r - 64) * 0.46);
+      if (cR > bestR + 0.5) { bestR = cR; cols = c; }
+    }
+    const rows = Math.ceil(n / cols);
     const ch = (bot - top) / rows, cw = W / cols;
+    // 円の大きさは全社で同じ（外側のラベルに要る幅＝最も長い名前、ただしセル幅の 3 割まで、を左右に残す）
+    const labW = Math.min(cw * 0.23, Math.max(40, ...items.flatMap(it => it.vals.map(x => tw(x.label, LFS, 600) + 6))));
+    const hh0 = Math.max(...items.map(it => headH(headW(it, cw - 16))));
+    const Rall = Math.max(cw * 0.17, Math.min(cw * 0.36, cw / 2 - 16 - labW, (ch - hh0 - 22) * 0.46));
     items.forEach((it, i) => {
       const row = Math.floor(i / cols), inRow = Math.min(cols, n - row * cols);
       const cx = (W - inRow * cw) / 2 + (i - row * cols + 0.5) * cw, y0 = top + row * ch;
       const hw = headW(it, cw - 16), hh = headH(hw);
       drawHead(it, hw, cx, y0 + 2);
-      // 外側のラベル用に左右 90px 以上を残して円の大きさを決める
-      const R = Math.max(22, Math.min(cw * 0.24, (ch - hh - 16) * 0.42, cw / 2 - 18 - 92)), r0 = R * 0.54, cy = y0 + hh + 8 + (ch - hh - 8) / 2;
+      // 円はできるだけ大きく。外側のラベルに要る幅（最も長い名前。ただしセル幅の 3 割まで）だけ左右に残す
+      const R = Rall, r0 = R * 0.56, cy = y0 + hh + 10 + (ch - hh - 10) / 2;
       const pos = it.vals.filter(x => x.v > 0 && !SEG_ADJ.test(x.n)), tot = pos.reduce((a, x) => a + x.v, 0);
       if (!tot) { o.push(`<text x="${cx}" y="${cy}" font-size="12" fill="#9ca3af" text-anchor="middle">この期のセグメント${mShort}なし</text>`); return; }
       let a = -Math.PI / 2;
@@ -2456,7 +2468,7 @@ function renderSegView() {
         const [x1, y1] = P(a, R), [x2, y2] = P(a1 - 1e-6, R), [x3, y3] = P(a1 - 1e-6, r0), [x4, y4] = P(a, r0);
         o.push(`<path d="M${x1.toFixed(2)} ${y1.toFixed(2)}A${R} ${R} 0 ${big} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}L${x3.toFixed(2)} ${y3.toFixed(2)}A${r0} ${r0} 0 ${big} 0 ${x4.toFixed(2)} ${y4.toFixed(2)}Z" fill="${c}" stroke="#fff" stroke-width="1.5"><title>${esc(x.label)}：${fmtV(x.v)}${esc(u + curLabel(t))}（${(pct * 100).toFixed(1)}%）</title></path>`);
         const mid = a + sw / 2, inside = pct >= 0.045;
-        if (inside) { const [tx, ty] = P(mid, (R + r0) / 2); o.push(`<text x="${tx.toFixed(1)}" y="${(ty + 4).toFixed(1)}" font-size="${clamp(R * 0.16, 9, 14).toFixed(1)}" font-weight="700" fill="${lum(c) > 0.66 ? '#374151' : '#fff'}" text-anchor="middle" pointer-events="none">${Math.round(pct * 100)}%</text>`); }
+        if (inside) { const [tx, ty] = P(mid, (R + r0) / 2); o.push(`<text x="${tx.toFixed(1)}" y="${(ty + 4).toFixed(1)}" font-size="${clamp(R * 0.15, 9, 18).toFixed(1)}" font-weight="700" fill="${lum(c) > 0.66 ? '#374151' : '#fff'}" text-anchor="middle" pointer-events="none">${Math.round(pct * 100)}%</text>`); }
         const [ex, ey] = P(mid, R + 2), side = Math.cos(mid) >= 0 ? 'R' : 'L';
         const w = wrapText(x.label + (inside ? '' : ` ${Math.max(1, Math.round(pct * 100))}%`), LFS, 600, room, 3, 8.5);
         lab[side].push({ y: ey, ex, ey, w, h: w.h });
@@ -2468,9 +2480,9 @@ function renderSegView() {
         o.push(mtext(lx, l.y - l.h / 2 + l.w.fs * 0.95, l.w, 'font-weight="600" fill="#374151"', sd === 'R' ? 'start' : 'end'));
       }));
       const negN = it.vals.length - pos.length;
-      o.push(`<text x="${cx}" y="${cy - 3}" font-size="${clamp(r0 * 0.24, 9, 13).toFixed(1)}" fill="#374151" text-anchor="middle">${mShort}${!isS && negN ? '（黒字計）' : ''}</text>`);
+      o.push(`<text x="${cx}" y="${cy - 3}" font-size="${clamp(r0 * 0.2, 9, 16).toFixed(1)}" fill="#374151" text-anchor="middle">${mShort}${!isS && negN ? '（黒字計）' : ''}</text>`);
       const tt = fmtV(tot) + u + curLabel(t);
-      o.push(`<text x="${cx}" y="${cy + clamp(r0 * 0.3, 11, 17)}" font-size="${clamp(Math.min(r0 * 0.3, r0 * 1.7 / Math.max(1, tw(tt, 1, 700))), 7, 17).toFixed(1)}" font-weight="700" fill="#111827" text-anchor="middle">${esc(tt)}</text>`);
+      o.push(`<text x="${cx}" y="${cy + clamp(r0 * 0.3, 11, 22)}" font-size="${clamp(Math.min(r0 * 0.28, r0 * 1.7 / Math.max(1, tw(tt, 1, 700))), 7, 22).toFixed(1)}" font-weight="700" fill="#111827" text-anchor="middle">${esc(tt)}</text>`);
     });
   } else {
     const n = items.length, padX = 16, slot = (W - padX * 2) / n;
