@@ -652,7 +652,7 @@ function buildModel(tables, paletteName) {
   const pal = PALETTES[paletteName] || PALETTES['クラシック'];
   segs.forEach((s, i) => { s.defaultColor = s.sheetColor || pal[i % pal.length]; s.color = s.defaultColor; s.sheetSales = s.salesColor; s.sheetOp = s.opColor; });
   const hasTotal = ['Q', 'Y'].some(g => views[g].values[TOTAL]);
-  const total = hasTotal ? { name: TOTAL, label: '会社全体', subtitle: '', isTotal: true, visible: false, color: '#1f6fb8', defaultColor: '#1f6fb8', salesColor: null, opColor: null, marginColor: null } : null;
+  const total = hasTotal ? { name: TOTAL, label: '会社全体', subtitle: '', isTotal: true, visible: false, color: '#1f1f1f', defaultColor: '#1f1f1f', salesColor: null, opColor: null, marginColor: null } : null;
 
   segs.forEach(s => { s.pbt = pbt.has(s.name); });
   if (total) total.pbt = pbt.has(TOTAL);
@@ -663,7 +663,7 @@ function buildModel(tables, paletteName) {
    状態
    ========================================================= */
 const O = {
-  title: '', company: '', note: '', unit: '', cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null, legend: 'top', totalOnly: false, cardStyle: '1', layout: 'panels', bars: 'both', showMargin: true, showLast: true, showLastBar: false,
+  title: '', company: '', note: '', unit: '', cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null, legend: 'top', totalOnly: false, cardStyle: 'none', layout: 'panels', bars: 'both', showMargin: true, showLast: true, showLastBar: false,
   marginColor: '#c0151f', height: 560, ratio: 'fit', rw: 16, rh: 9, pw: 1280, ph: 720, yMax: null, rMax: null, yMin: null, rMin: null, nQ: 20, endIdx: null, fillGaps: true, axisMode: 'shared',
 };
 let M = null, SOURCE = '';
@@ -1255,7 +1255,7 @@ function syncControls() {
   $('#oAxisMode').value = O.axisMode || 'shared';
   $('#oTitle').value = O.title; $('#oCompany').value = O.company || ''; $('#oNote').value = O.note || ''; $('#oLegend').value = O.legend;
   syncUnits();
-  $('#oLayout').value = O.layout || 'panels'; $('#oTotalOnly').checked = !!O.totalOnly; $('#oCards').value = O.cardStyle || '1';
+  $('#oLayout').value = O.layout || 'panels'; $('#oTotalOnly').checked = !!O.totalOnly; $('#oCards').value = O.cardStyle || 'none';
   $('#totalOnlyRow').style.display = $('#cardRow').style.display = (M && M.total && SOURCE !== 'compare') ? '' : 'none'; $('#oBars').value = O.bars || 'both'; $('#oMargin').checked = O.showMargin; $('#oLast').checked = O.showLast; $('#oLastBar').checked = O.showLastBar;
   $('#oMColor').value = O.marginColor; $('#oH').value = O.height; $('#oHv').textContent = O.height;
   syncSize();

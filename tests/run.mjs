@@ -164,10 +164,12 @@ console.log('2. Claude 版：シートのURLから読み込み（4シート形�
   await p.click('#segList .segrow.total input.vis');
   ok(await p.evaluate(() => M.total.visible), '会社全体を表示できる');
   await p.click('#totalOnlyRow .sw-toggle');
+  ok(!(await p.$$eval('#chart svg text', a => a.some(t => t.textContent === '売上高'))), 'カードは初期では出さない');
+  await p.selectOption('#oCards', '1');
   ok(await p.evaluate(() => isTotalOnly()) && await p.$$eval('#chart svg text', a => a.some(t => t.textContent === '売上高') && a.some(t => t.textContent === '営業利益率') && !a.some(t => t.textContent === 'Alpha')), '会社全体だけ表示：セグメントを消さずに会社全体の1枚＋指標カード');
   for (const st of ['4', '9', '10', 'none']) await p.selectOption('#oCards', st);
   ok(!(await p.$$eval('#chart svg text', a => a.some(t => t.textContent === '売上高'))), 'カードを表示しないこともできる');
-  await p.click('#totalOnlyRow .sw-toggle'); await p.selectOption('#oCards', '1');
+  await p.click('#totalOnlyRow .sw-toggle'); await p.selectOption('#oCards', 'none');
   ok(await p.evaluate(() => {
     const t = (name, rows) => ({ name, rows: [[name], ['…'], [], ...rows] });
     const h = ['period', 'HPC', 'Smartphone'];
