@@ -118,6 +118,9 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .empty{display:flex;align-items:center;justify-content:center;height:420px;color:var(--mute)}
 .ginfo{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px;line-height:1.6;background:#fafbfc}
 .ginfo b{font-weight:700}.ginfo .done{color:#047857}.ginfo .wait{color:#b45309}.ginfo ul{margin:4px 0 0;padding-left:16px}.ginfo li{margin:1px 0}
+.segpick{border:1px solid var(--line);border-radius:8px;background:#fff;max-height:260px;overflow:auto}
+.segpick label{display:grid;grid-template-columns:1fr 150px;gap:6px;align-items:center;padding:5px 8px;font-size:12px;border-bottom:1px solid #f3f4f6}
+.segpick select{width:100%;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:12px;padding:3px}
 .foot{display:flex;justify-content:space-between;color:var(--mute);font-size:11.5px;margin-top:10px;padding:0 4px}
 #tip{position:fixed;pointer-events:none;background:rgba(17,24,39,.94);color:#fff;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.55;opacity:0;transition:opacity .08s;z-index:20;min-width:170px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
 #tip .h{display:flex;align-items:center;gap:6px;font-weight:700;margin-bottom:4px}
@@ -189,7 +192,13 @@ body.gas .nogas{display:none!important}
           <option value="trend">業績の推移</option>
           <option value="donut">円グラフ（セグメント別）</option>
           <option value="stack">積み上げ棒（セグメント別）</option>
+          <option value="segtrend">セグメント同士の推移を比べる</option>
         </select></div>
+        <div id="cmpSegPickBox" style="display:none;margin-bottom:6px">
+          <input type="text" id="cmpSegKw" placeholder="セグメント名でまとめて選ぶ（例：データセンター, Data Center）" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12px;margin-bottom:6px">
+          <div id="cmpSegPick" class="segpick"></div>
+          <p class="note" style="margin-top:4px">会社ごとに比べるセグメントを選びます。名前の一部を入れると、各社でその名前を含むセグメントをまとめて選びます（「,」で区切ると、どれかを含むもの）。</p>
+        </div>
         <div id="cmpSegOpts" style="display:none">
           <div class="field"><span>値</span><select id="cmpSegMetric" style="width:190px"><option value="s">売上高</option><option value="o">利益</option></select></div>
           <div class="field"><span>区分</span><select id="cmpSegGran" style="width:190px"><option value="Q">四半期</option><option value="Y">年度（暦年）</option></select></div>
@@ -932,7 +941,7 @@ const isTotalOnly = () => !!(O.totalOnly && SOURCE !== 'compare' && M && M.total
 function render() {
   const host = $('#chart');
   if (!M) return;
-  if (SOURCE === 'compare' && CMP.view && CMP.view !== 'trend' && CMP.loaded && CMP.loaded.some(x => x.r.seg)) { $('#tip').style.opacity = 0; return renderSegView(); }
+  if (SOURCE === 'compare' && (CMP.view === 'donut' || CMP.view === 'stack') && CMP.loaded && CMP.loaded.some(x => x.r.seg)) { $('#tip').style.opacity = 0; return renderSegView(); }
   const totalOnly = isTotalOnly();
   if (!totalOnly && SOURCE !== 'compare' && (O.layout === 'stackO' || O.layout === 'stackS')) { $('#tip').style.opacity = 0; return renderStackTrend(); }
   $('#tip').style.opacity = 0;
@@ -2058,7 +2067,7 @@ function renderStackTrend() {
 const DEFAULT_MASTER = 'https://docs.google.com/spreadsheets/d/1NMjMQ6JeUuRRyy4X7m79YCTnklUgkdE76407QYY5ahQ/edit';
 // 1通貨あたりの円（2026年8月末ごろの目安。画面で書き換え可）
 const FX_JPY = { JPY: 1, USD: 160, EUR: 185.5, CNY: 23.5, TWD: 5.0, HKD: 20.4, KRW: 0.104, DKK: 24.8, SEK: 16.7, NOK: 17.0, CHF: 197.9, GBP: 216.8, SGD: 125.6, AUD: 114.7, CAD: 115.1, INR: 1.69 };
-const CMP = { companies: [], sel: [], raw: {}, fx: Object.assign({}, FX_JPY), cur: 'JPY', align: 'cal', orig: {}, view: 'trend', segMetric: 's', segGran: 'Q', segPer: null, segColor: 'shade' };
+const CMP = { companies: [], sel: [], raw: {}, fx: Object.assign({}, FX_JPY), cur: 'JPY', align: 'cal', orig: {}, view: 'trend', segPick: {}, segKw: '', segMetric: 's', segGran: 'Q', segPer: null, segColor: 'shade' };
 
 /* シートの値を読む（Apps Script 版 / Claude 版で取得経路が違う） */
 async function readRanges(id, ranges) {
@@ -2313,8 +2322,39 @@ function alignCompany(r, mode) {
   });
   return list;
 }
+/* ---------- セグメント同士の推移を比べる（CMP.view = 'segtrend'） ----------
+   各社で選んだ 1 つのセグメントの売上・利益を、会社全体の代わりに使って「業績の推移」と同じ形で並べる */
+const segNamesOf = r => { const sg = r.seg || {}; return [...new Set(['sQ', 'oQ', 'sY', 'oY'].flatMap(k => (sg[k] || { names: [] }).names))]; };
+const segHasVals = (r, n) => ['sQ', 'oQ', 'sY', 'oY'].some(k => ((r.seg || {})[k] || { rows: [] }).rows.some(([, v]) => v[n] != null));
+function pickSegFor(c, r) {
+  const names = segNamesOf(r).filter(n => segHasVals(r, n));
+  if (CMP.segPick[c.id] && names.includes(CMP.segPick[c.id])) return CMP.segPick[c.id];
+  const kws = String(CMP.segKw || '').split(/[,、，]/).map(x => half(x).trim().toLowerCase()).filter(Boolean);
+  const lab = n => half(segLabelOf({ r }, n) + ' ' + n).toLowerCase();
+  if (kws.length) { const hit = names.find(n => kws.some(k => lab(n).includes(k))); if (hit) return hit; }
+  return names.find(n => !SEG_ADJ.test(n)) || names[0] || '';
+}
+function segAsTotal(r, name) {
+  const sg = r.seg || {}, merge = (sk, ok) => {
+    const m = new Map();
+    ((sg[sk] || { rows: [] }).rows).forEach(([p, v]) => { if (v[name] != null) { const x = m.get(p) || [p, null, null]; x[1] = v[name]; m.set(p, x); } });
+    ((sg[ok] || { rows: [] }).rows).forEach(([p, v]) => { if (v[name] != null) { const x = m.get(p) || [p, null, null]; x[2] = v[name]; m.set(p, x); } });
+    return [...m.values()];
+  };
+  return { ...r, Q: merge('sQ', 'oQ'), Y: merge('sY', 'oY'), pbt: false, segName: name };
+}
+function renderSegPick() {
+  const list = CMP.loaded || [];
+  $('#cmpSegPick').innerHTML = list.map(({ c, r }) => {
+    const names = segNamesOf(r).filter(n => segHasVals(r, n)), cur = pickSegFor(c, r);
+    return `<label><span>${esc(cmpName(c))}</span><select data-id="${c.id}">${names.length ? names.map(n => `<option value="${esc(n)}" ${n === cur ? 'selected' : ''}>${esc(segLabelOf({ r }, n))}</option>`).join('') : '<option value="">セグメントのデータなし</option>'}</select></label>`;
+  }).join('');
+}
 function buildCompare() {
-  const ok = CMP.loaded || []; if (!ok.length) return;
+  if (CMP.view === 'segtrend' && (CMP.loaded || []).some(x => !x.r.seg)) { ensureSeg().catch(e => setStatus(e && e.code ? mcpErrMsg(e) : '読み込みに失敗しました: ' + esc(e && e.message || e), true)); return; }
+  const segMode = CMP.view === 'segtrend';
+  const ok = segMode ? (CMP.loaded || []).map(({ c, r }) => ({ c, r: segAsTotal(r, pickSegFor(c, r)) })).filter(x => x.r.segName && (x.r.Q.length || x.r.Y.length)) : (CMP.loaded || []);
+  if (!ok.length) { if (segMode) setStatus('選んだ会社に、比べられるセグメントのデータがありません', true); return; }
   const mode = CMP.align || 'cal';
   CMP.orig = {};
   const aligned = ok.map(({ r }) => alignCompany(r, mode));
@@ -2345,7 +2385,7 @@ function buildCompare() {
         rows.push([label, per, val(x.sa), val(x.op)]);
       });
     }
-    segRows.push([label, [c.tk, r.fyMonth ? r.fyMonth + '月決算' : '', r.cur, r.pbt ? '利益は税引前' : ''].filter(Boolean).join('・'), pal[i % pal.length]]);
+    segRows.push([label, [r.segName ? segLabelOf({ r }, r.segName) : '', c.tk, r.fyMonth ? r.fyMonth + '月決算' : '', r.cur, r.pbt ? '利益は税引前' : ''].filter(Boolean).join('・'), pal[i % pal.length]]);
     if (r.pbt) pbtLabels.push(label);
   });
   const convs = [...new Set(ok.map(x => x.r.cur))].filter(c => c !== t).map(c => { const f = CMP.fx[c] / CMP.fx[t]; return f >= 1 ? `1${curLabel(c)}=${+f.toPrecision(4)}${curLabel(t)}` : `1${curLabel(t)}=${+(1 / f).toPrecision(4)}${curLabel(c)}`; });
@@ -2353,7 +2393,7 @@ function buildCompare() {
   const alignNote = mode === 'cal' ? '横軸は暦年の四半期（1Q＝1-3月）・暦年に換算' + (unknownFy.length ? `（${unknownFy.join('・')}は決算月が不明なため12月決算として換算）` : '')
     : mode === 'latest' ? '各社の最新期を右端にそろえて表示（横軸は最も新しい会社の暦四半期）'
     : 'FYは各社の会計年度（決算月が異なる会社はずれがあります）';
-  const cfg = [['項目', '値'], ['タイトル', '全社業績の比較（{区分}）'], ['通貨', t], ['データの単位', '百万'], ['表示単位', '億'],
+  const cfg = [['項目', '値'], ['タイトル', segMode ? 'セグメントの比較（{区分}）' : '全社業績の比較（{区分}）'], ['通貨', t], ['データの単位', '百万'], ['表示単位', '億'],
     ['注記', (convs.length ? '換算：' + convs.join('、') + '。' : '') + alignNote]];
   const keepGran = M && M.gran, keepAxis = O.axisMode;
   if (ingest([{ name: 'compare', rows }, { name: 'segments', rows: segRows }, { name: 'config', rows: cfg }], 'compare')) {
@@ -2367,7 +2407,7 @@ function buildCompare() {
     }
     if (keepGran && M.views[keepGran].periods.length && keepGran !== M.gran) setGran(keepGran); else render();
     syncControls();
-    if (CMP.view !== 'trend') ensureSeg().catch(e => setStatus(e && e.code ? mcpErrMsg(e) : '読み込みに失敗しました: ' + esc(e && e.message || e), true));
+    if (CMP.view === 'donut' || CMP.view === 'stack') ensureSeg().catch(e => setStatus(e && e.code ? mcpErrMsg(e) : '読み込みに失敗しました: ' + esc(e && e.message || e), true));
   }
 }
 /* =========================================================
@@ -2447,8 +2487,9 @@ async function ensureSeg() {
         done++; setStatus(`各社のセグメントを読み込み中… ${done}/${need.length}`);
       }));
     }
-    setStatus(`<b>${list.length}社</b> のセグメントを読み込みました。期を選ぶと切り替わります。`);
+    setStatus(`<b>${list.length}社</b> のセグメントを読み込みました。`);
   }
+  if (CMP.view === 'segtrend') { renderSegPick(); buildCompare(); return; }
   fillSegPeriods();
   render();
 }
@@ -2680,11 +2721,15 @@ function bindCompare() {
   $('#cmpAlign').onchange = e => { CMP.align = e.target.value; buildCompare(); };
   $('#cmpView').onchange = e => {
     CMP.view = e.target.value;
-    $('#cmpSegOpts').style.display = CMP.view === 'trend' ? 'none' : '';
-    $('#cmpAlignRow').style.display = CMP.view === 'trend' ? '' : 'none';
-    if (CMP.view === 'trend') render();
+    const segView = CMP.view === 'donut' || CMP.view === 'stack';
+    $('#cmpSegOpts').style.display = segView ? '' : 'none';
+    $('#cmpSegPickBox').style.display = CMP.view === 'segtrend' ? '' : 'none';
+    $('#cmpAlignRow').style.display = segView ? 'none' : '';
+    if (CMP.view === 'trend') buildCompare();
     else if (CMP.loaded && CMP.loaded.length) ensureSeg().catch(err => setStatus(err && err.code ? mcpErrMsg(err) : '読み込みに失敗しました: ' + esc(err && err.message || err), true));
   };
+  $('#cmpSegPick').onchange = e => { const id = e.target.dataset && e.target.dataset.id; if (!id) return; CMP.segPick[id] = e.target.value; buildCompare(); };
+  $('#cmpSegKw').oninput = e => { CMP.segKw = e.target.value; CMP.segPick = {}; clearTimeout(bindCompare._k); bindCompare._k = setTimeout(() => { renderSegPick(); buildCompare(); }, 300); };
   $('#cmpSegMetric').onchange = e => { CMP.segMetric = e.target.value; CMP.segPer = null; fillSegPeriods(); render(); };
   $('#cmpSegGran').onchange = e => { CMP.segGran = e.target.value; CMP.segPer = null; fillSegPeriods(); render(); };
   $('#cmpSegPer').onchange = e => { CMP.segPer = e.target.value === 'latest' ? 'latest' : +e.target.value; render(); };
@@ -2700,7 +2745,7 @@ function bindCompare() {
    ========================================================= */
 (function init() { try {
   // 版の表示（build 時に日時が入る。Apps Script 版は取得元も出す）
-  const BUILD = '2026-11-17 14:07';
+  const BUILD = '2026-11-17 14:10';
   const showVer = () => {   // Apps Script が後ろに付ける目印（__PAGE_SRC）はページの最後で読まれるので、読み込み後に表示する
     const src = window.__PAGE_SRC === 'github' ? '・GitHubから取得' : window.__PAGE_SRC === 'local' ? '・Apps Script内の古いindex（Code.gsを更新してください）' : IS_GAS ? '・取得元不明（Code.gsが古い可能性）' : '';
     $('#ver').textContent = (BUILD.indexOf('BUILD') < 0 ? '版 ' + BUILD : '') + src;
