@@ -263,6 +263,8 @@ body.gas .nogas{display:none!important}
     <div class="stack"><span>企業名</span><input type="text" id="oCompany" placeholder="例: 信越化学"></div>
     <div class="stack"><span>タイトル <small style="color:var(--mute)">（空欄で「企業名 セグメント別業績推移」）</small></span><input type="text" id="oTitle" placeholder="{企業名}　セグメント別業績推移"></div>
     <div class="stack"><span>注記 <small style="color:var(--mute)">（左下に表示。出所など）</small></span><input type="text" id="oNote" placeholder="例: 出所：決算説明資料"></div>
+    <div class="field" id="totalOnlyRow"><span>会社全体だけ表示</span><label class="sw-toggle"><input type="checkbox" id="oTotalOnly"><i></i></label></div>
+    <div class="field" id="cardRow"><span>指標カード</span><select id="oCards"><option value="none">表示しない</option><option value="1">1. シンプル（白・枠線）</option><option value="2">2. 左に色の帯</option><option value="3">3. 淡い色の背景</option><option value="4">4. ダーク</option><option value="5">5. 上に色の線</option><option value="6">6. カードなし（区切り線）</option><option value="7">7. グラデーション</option><option value="8">8. 色の太枠</option><option value="9">9. 小さな推移グラフ付き</option><option value="10">10. 増減を大きく</option></select></div>
     <div class="field"><span>グラフの形</span><select id="oLayout"><option value="panels">セグメントごとに並べる</option><option value="stackO">積み上げ（利益）</option><option value="stackS">積み上げ（売上高）</option></select></div>
     <div class="field"><span>表示する棒</span><select id="oBars"><option value="both">売上高と営業利益</option><option value="sales">売上高だけ</option><option value="op">営業利益だけ</option></select></div>
     <div class="field"><span>凡例</span><select id="oLegend"><option value="top">上（タイトル横）</option><option value="bottom">下</option><option value="none">表示しない</option></select></div>
@@ -650,7 +652,7 @@ function buildModel(tables, paletteName) {
   const pal = PALETTES[paletteName] || PALETTES['クラシック'];
   segs.forEach((s, i) => { s.defaultColor = s.sheetColor || pal[i % pal.length]; s.color = s.defaultColor; s.sheetSales = s.salesColor; s.sheetOp = s.opColor; });
   const hasTotal = ['Q', 'Y'].some(g => views[g].values[TOTAL]);
-  const total = hasTotal ? { name: TOTAL, label: '会社全体', subtitle: '', isTotal: true, visible: false, color: '#475569', defaultColor: '#475569', salesColor: null, opColor: null, marginColor: null } : null;
+  const total = hasTotal ? { name: TOTAL, label: '会社全体', subtitle: '', isTotal: true, visible: false, color: '#1f6fb8', defaultColor: '#1f6fb8', salesColor: null, opColor: null, marginColor: null } : null;
 
   segs.forEach(s => { s.pbt = pbt.has(s.name); });
   if (total) total.pbt = pbt.has(TOTAL);
@@ -661,7 +663,7 @@ function buildModel(tables, paletteName) {
    状態
    ========================================================= */
 const O = {
-  title: '', company: '', note: '', unit: '', cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null, legend: 'top', layout: 'panels', bars: 'both', showMargin: true, showLast: true, showLastBar: false,
+  title: '', company: '', note: '', unit: '', cur: 'JPY', curCustom: '', dataUnit: 1e6, dispUnit: 'auto', dispCur: 'same', fx: null, legend: 'top', totalOnly: false, cardStyle: '1', layout: 'panels', bars: 'both', showMargin: true, showLast: true, showLastBar: false,
   marginColor: '#c0151f', height: 560, ratio: 'fit', rw: 16, rh: 9, pw: 1280, ph: 720, yMax: null, rMax: null, yMin: null, rMin: null, nQ: 20, endIdx: null, fillGaps: true, axisMode: 'shared',
 };
 let M = null, SOURCE = '';
@@ -765,6 +767,8 @@ function applyConfig(cfg) {
     else if (/画面|自動|fit|auto/i.test(v)) O.ratio = 'fit';
   }
   if ((v = g('幅','width')) != null && num(v)) { O.ratio = 'px'; O.pw = clamp(num(v), 360, 4000); O.ph = O.ph || O.height; }
+  if ((v = g('会社全体だけ表示','会社全体だけ','totalonly','total_only')) != null) O.totalOnly = /^(true|1|on|yes|する|はい|表示)$/i.test(v);
+  if ((v = g('指標カード','カード','cards','card_style')) != null) { const m = half(v).match(/\d+/); O.cardStyle = /なし|しない|none|false|0/i.test(v) && !m ? 'none' : m ? String(clamp(+m[0], 1, 10)) : O.cardStyle; }
   if ((v = g('グラフの形','グラフの種類','layout','chart_type')) != null) { const t = half(v).replace(/\s/g, '').toLowerCase(); O.layout = /積み上げ.*売上|stack.*(sales|revenue)/.test(t) ? 'stackS' : /積み上げ|stack/.test(t) ? 'stackO' : 'panels'; }
   if ((v = g('表示する棒','表示する値','棒グラフ','bars','show_bars')) != null) { const b = parseBars(v); if (b) O.bars = b; }
   if ((v = g('営業利益率','利益率','利益率の線','showmargin')) != null) O.showMargin = !/^(false|0|off|no|なし|非表示)$/i.test(v);
@@ -816,7 +820,7 @@ function setGran(g, silent) {
   if (!M || !M.views[g] || !M.views[g].periods.length) return;
   M.gran = g; M.values = M.views[g].values;
   // 表示する系列（セグメント＋表示中なら会社全体）にデータがある期だけを使う
-  const names = M.segs.map(s => s.name).concat(M.total && M.total.visible ? [TOTAL] : []);
+  const names = (O.totalOnly && SOURCE !== 'compare' && M.total) ? [TOTAL] : M.segs.map(s => s.name).concat(M.total && M.total.visible ? [TOTAL] : []);
   const keys = new Set(); names.forEach(n => Object.keys(M.values[n] || {}).forEach(k => keys.add(+k)));
   let ps = M.views[g].periods.filter(p => keys.has(p.key));
   if (!ps.length) ps = M.views[g].periods;
@@ -919,18 +923,21 @@ function ratioLabel(w, h) {
 function titleText() {
   const co = String(O.company || '').trim();
   let t = String(O.title || '').trim();
-  if (!t) t = co ? '{企業名}　セグメント別業績推移（{区分}）' : '';
+  if (!t) t = co ? (isTotalOnly() ? '{企業名}　業績推移（{区分}）' : '{企業名}　セグメント別業績推移（{区分}）') : '';
   return t.replace(/\{(企業名|会社名|company)\}/gi, co).replace(/\{(単位|unit)\}/gi, M ? unitText() : '').replace(/\{(通貨|currency)\}/gi, curLabel(effCur())).replace(/\{(区分|期間)\}/g, granWord()).trim();
 }
 let LAST = null; // ホバー用
+const isTotalOnly = () => !!(O.totalOnly && SOURCE !== 'compare' && M && M.total && M.values && M.values[TOTAL]);
 function render() {
   const host = $('#chart');
   if (!M) return;
   if (SOURCE === 'compare' && CMP.view && CMP.view !== 'trend' && CMP.loaded && CMP.loaded.some(x => x.r.seg)) { $('#tip').style.opacity = 0; return renderSegView(); }
-  if (SOURCE !== 'compare' && (O.layout === 'stackO' || O.layout === 'stackS')) { $('#tip').style.opacity = 0; return renderStackTrend(); }
+  const totalOnly = isTotalOnly();
+  if (!totalOnly && SOURCE !== 'compare' && (O.layout === 'stackO' || O.layout === 'stackS')) { $('#tip').style.opacity = 0; return renderStackTrend(); }
   $('#tip').style.opacity = 0;
-  const hasTot = !!(M.total && M.total.visible && M.values[TOTAL]);
-  const segs = [...(hasTot ? [M.total] : []), ...M.segs.filter(s => s.visible)];
+  const hasTot = !!(M.total && (M.total.visible || totalOnly) && M.values[TOTAL]);
+  // 「会社全体だけ表示」のときは会社全体の 1 枚だけ
+  const segs = totalOnly ? [M.total] : [...(hasTot ? [M.total] : []), ...M.segs.filter(s => s.visible)];
   const per = visiblePeriods();
   $('#footL').textContent = M ? `${segs.length}セグメント・${per.length}${granWord()}を表示中` : '';
   if (!segs.length || !per.length) { host.innerHTML = '<div class="empty">表示するセグメントを選んでください</div>'; return; }
@@ -942,7 +949,7 @@ function render() {
   // 文字の大きさ：凡例・軸の名前・目盛り・最新値を大きめに。画面が小さい（スマホなど）ときは、縮んで読めなくならないようさらに大きくする
   const TS = clamp(0.82 / F, 1, 1.5);
   const FS = { leg: 14 * TS, axT: 13 * TS, tick: 12 * TS, val: 13.5 * TS, mg: 14 * TS, xq: 11.5 * TS, xy: 11 * TS };
-  const showM = O.showMargin && [...(M.total && M.total.visible ? [M.total] : []), ...M.segs.filter(s => s.visible)].some(s => s.showMargin !== false);
+  const showM = O.showMargin && segs.some(s => s.showMargin !== false);
   const n = segs.length, m = per.length;
   const K = scaleK();
   const get = (s, p) => { const v = (M.values[s.name] || {})[p.key]; return v ? { sales: v.sales == null ? null : v.sales * K, op: v.op == null ? null : v.op * K } : null; };
@@ -986,14 +993,34 @@ function render() {
   if (each) gap = Math.max(gap, Math.max(...axE.map(ls => tw(fmtN(ax.kp * ls, ls), 10))) + 18);
   const totGap = hasTot && n > 1 ? gap + 18 : 0;   // 会社全体とセグメントの間を少し広げる
   const pw = (W - padL - padR - gap * (n - 1) - totGap) / n;
-  const hasSub = segs.some(s => s.subtitle);
+  // 指標カード（会社全体だけのとき）
+  let cards = null;
+  if (totalOnly && O.cardStyle && O.cardStyle !== 'none') {
+    let li = -1; per.forEach((p, i) => { const v = (M.values[TOTAL] || {})[p.key]; if (v && (v.sales != null || v.op != null)) li = i; });
+    if (li >= 0) {
+      const p = per[li], v = M.values[TOTAL][p.key], pp = M.periods.find(x => x.key === p.key - 10), pv = pp ? M.values[TOTAL][pp.key] : null;
+      const u = (UNIT_LABEL[dispUnitValue()] || '') + curLabel(effCur());
+      const fmt = x => x == null ? '–' : fmtV(x * K) + u;
+      const mg = margin(v), pmg = margin(pv);
+      const idx = M.periods.indexOf(p), last12 = M.periods.slice(Math.max(0, idx - 11), idx + 1).map(q => M.values[TOTAL][q.key] || null);
+      const items = [
+        ...(useS ? [{ label: '売上高', v: fmt(v.sales), d: kpiDelta(v.sales, pv && pv.sales), color: M.total.salesColor || tint(M.total.color), spark: last12.map(q => q && q.sales) }] : []),
+        ...(useO ? [{ label: M.total.pbt ? PBT_LABEL : '営業利益', v: fmt(v.op), d: kpiDelta(v.op, pv && pv.op), color: M.total.opColor || M.total.color, spark: last12.map(q => q && q.op) }] : []),
+        ...(mg != null ? [{ label: M.total.pbt ? '税引前利益率' : '営業利益率', v: (mg * 100).toFixed(1) + '%', d: kpiDelta(mg, pmg, 'pt'), color: M.total.marginColor || O.marginColor, spark: last12.map(q => margin(q)) }] : []),
+      ];
+      const tsC = clamp(TS * Math.min(1, (W - 32) / (items.length * 230)), 0.7, 1.5);
+      cards = kpiCards(O.cardStyle, padL, y + 10, W - padL - padR, { per: plab(p), dlab: p.ann ? '前年比' : '前年同期比', items }, tsC);
+      y += cards.h + 14;
+    }
+  }
+  const hasSub = !totalOnly && segs.some(s => s.subtitle);
   const headTop = y + 8;
   // 見出し（セグメント名・サブタイトル）は省略せず、幅に収まらなければ折り返す
   const hRoom = pw + gap * 0.6 - 4;
   const nameW = segs.map(s => wrapText(s.label, 17, 700, hRoom, 2, 10));
   const subW = segs.map(s => s.subtitle ? wrapText(s.subtitle, 12.5, 500, hRoom, 2, 8) : null);
   const nameH = Math.max(...nameW.map(w => w.h)), subH = Math.max(0, ...subW.map(w => w ? w.h : 0));
-  const headH = Math.max(hasSub ? 50 : 30, nameH + (hasSub ? subH + 3 : 0) + 8);
+  const headH = totalOnly ? 4 : Math.max(hasSub ? 50 : 30, nameH + (hasSub ? subH + 3 : 0) + 8);
   const plotTop = headTop + headH + 10;
   const hasYears = per.some(p => p.ylab);
   const xLabH = 7 + FS.xq, yearH = hasYears ? 10 + FS.xy : 0, legB = O.legend === 'bottom' ? LFS + 22 : 0;
@@ -1021,6 +1048,7 @@ function render() {
   o.push('<defs>');
   segs.forEach((s, k) => { const px = pxOf(k); o.push(`<clipPath id="cp${k}"><rect x="${px - 3}" y="${plotTop - 1}" width="${pw + 6}" height="${plotH + 2}"/></clipPath>`); });
   o.push('</defs>');
+  if (cards) o.push(cards.svg);
 
   { let ny = HH - noteH + 1; noteLines.forEach(x => { o.push(mtext(16, ny + x.w.fs, x.w, `fill="${x.t === pbtNote ? '#6b7280' : '#9ca3af'}"`, 'start')); ny += x.w.h; }); }
   if (fxNote) o.push(`<text x="${W - 12}" y="${HH - 6}" font-size="10" fill="#9ca3af" text-anchor="end">${esc(fxNote)}</text>`);
@@ -1072,9 +1100,9 @@ function render() {
     const head = s.isTotal ? '#1f2937' : shade(base, lum(base) > 0.62 ? 0.35 : 0.1);
     // 見出し
     const nw = nameW[k], sw = subW[k], nTop = headTop + 2 + (nameH - nw.h);
-    o.push(mtext(px + pw / 2, nTop + nw.fs, nw, `font-weight="700" fill="${head}"`));
-    if (sw) o.push(mtext(px + pw / 2, headTop + 2 + nameH + 3 + sw.fs, sw, `font-weight="500" fill="${head}" fill-opacity=".72"`));
-    o.push(`<line x1="${px + pw * 0.3}" x2="${px + pw * 0.7}" y1="${headTop + headH}" y2="${headTop + headH}" stroke="${base}" stroke-width="2" stroke-linecap="round" opacity=".9"/>`);
+    if (!totalOnly) o.push(mtext(px + pw / 2, nTop + nw.fs, nw, `font-weight="700" fill="${head}"`));
+    if (sw && !totalOnly) o.push(mtext(px + pw / 2, headTop + 2 + nameH + 3 + sw.fs, sw, `font-weight="500" fill="${head}" fill-opacity=".72"`));
+    if (!totalOnly) o.push(`<line x1="${px + pw * 0.3}" x2="${px + pw * 0.7}" y1="${headTop + headH}" y2="${headTop + headH}" stroke="${base}" stroke-width="2" stroke-linecap="round" opacity=".9"/>`);
     // グリッド
     const lsK = each ? axE[k] : ax.ls;
     if (each) {
@@ -1227,7 +1255,8 @@ function syncControls() {
   $('#oAxisMode').value = O.axisMode || 'shared';
   $('#oTitle').value = O.title; $('#oCompany').value = O.company || ''; $('#oNote').value = O.note || ''; $('#oLegend').value = O.legend;
   syncUnits();
-  $('#oLayout').value = O.layout || 'panels'; $('#oBars').value = O.bars || 'both'; $('#oMargin').checked = O.showMargin; $('#oLast').checked = O.showLast; $('#oLastBar').checked = O.showLastBar;
+  $('#oLayout').value = O.layout || 'panels'; $('#oTotalOnly').checked = !!O.totalOnly; $('#oCards').value = O.cardStyle || '1';
+  $('#totalOnlyRow').style.display = $('#cardRow').style.display = (M && M.total && SOURCE !== 'compare') ? '' : 'none'; $('#oBars').value = O.bars || 'both'; $('#oMargin').checked = O.showMargin; $('#oLast').checked = O.showLast; $('#oLastBar').checked = O.showLastBar;
   $('#oMColor').value = O.marginColor; $('#oH').value = O.height; $('#oHv').textContent = O.height;
   syncSize();
   $('#oYMax').value = O.yMax || ''; $('#oRMax').value = O.rMax || '';
@@ -1292,7 +1321,7 @@ function bindResize() {
   window.addEventListener('pointerup', () => { if (!drag) return; drag = null; persistOpt(); scheduleRender(); });
 }
 function persistOpt() {
-  store.save({ opt: { layout: O.layout, bars: O.bars, legend: O.legend, showMargin: O.showMargin, showLast: O.showLast, showLastBar: O.showLastBar, marginColor: O.marginColor, height: O.height, ratio: O.ratio, rw: O.rw, rh: O.rh, pw: O.pw, ph: O.ph } });
+  store.save({ opt: { totalOnly: O.totalOnly, cardStyle: O.cardStyle, layout: O.layout, bars: O.bars, legend: O.legend, showMargin: O.showMargin, showLast: O.showLast, showLastBar: O.showLastBar, marginColor: O.marginColor, height: O.height, ratio: O.ratio, rw: O.rw, rh: O.rh, pw: O.pw, ph: O.ph } });
 }
 /* 利益率の線のオン／オフボタン（セグメント・会社ごと） */
 const mgBtn = s => `<button class="mg${s.showMargin === false ? ' off' : ''}" title="営業利益率の線を${s.showMargin === false ? '表示する' : '消す'}"><svg width="18" height="12" viewBox="0 0 18 12"><path d="M1 9 L6 5 L11 7 L17 2" fill="none" stroke="${esc(O.marginColor)}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
@@ -1375,6 +1404,8 @@ function bindControls() {
   on('#oDispCur', 'change', e => { O.dispCur = e.target.value === O.cur ? 'same' : e.target.value; O.fx = null; uChg(); });
   on('#oFx', 'input', e => { O.fx = num(e.target.value) > 0 ? num(e.target.value) : null; syncUnits(); scheduleRender(); });
   on('#oLegend', 'change', e => { O.legend = e.target.value; render(); persist(); });
+  on('#oTotalOnly', 'change', e => { O.totalOnly = e.target.checked; if (M) setGran(M.gran, true); renderSegList(); render(); persist(); });
+  on('#oCards', 'change', e => { O.cardStyle = e.target.value; render(); persist(); });
   on('#oLayout', 'change', e => { O.layout = e.target.value; render(); persist(); });
   on('#oBars', 'change', e => { O.bars = e.target.value; render(); persist(); });
   on('#oMargin', 'change', e => { O.showMargin = e.target.checked; render(); persist(); });
@@ -1821,6 +1852,81 @@ async function downloadTemplate() {
     const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
     saveFile('segment_chart_template.xlsx', new Blob([buf]));
   } catch (e) { toast('テンプレートを作成できませんでした'); }
+}
+
+/* =========================================================
+   会社全体だけのときの指標カード（売上高・営業利益・営業利益率）。10 種類のデザイン（O.cardStyle）
+   ========================================================= */
+const CARD_STYLES = [
+  ['1', 'シンプル（白・枠線）'], ['2', '左に色の帯'], ['3', '淡い色の背景'], ['4', 'ダーク'], ['5', '上に色の線'],
+  ['6', 'カードなし（数字を区切り線で）'], ['7', 'グラデーション'], ['8', '色の太枠'], ['9', '小さな推移グラフ付き'], ['10', '増減を大きく'],
+];
+const UP = '#059669', DOWN = '#dc2626';
+// 前年同期（前年）との比較
+function kpiDelta(cur, prev, kind) {
+  if (cur == null || prev == null) return { t: '', s: 0 };
+  if (kind === 'pt') { const d = (cur - prev) * 100; return { t: `${d >= 0 ? '+' : ''}${d.toFixed(1)}pt`, s: Math.sign(Math.round(d * 10)) }; }
+  if (prev > 0 && cur > 0) { const d = (cur / prev - 1) * 100; return { t: `${d >= 0 ? '+' : ''}${d.toFixed(1)}%`, s: Math.sign(Math.round(d * 10)) }; }
+  if (prev <= 0 && cur > 0) return { t: '黒字転換', s: 1 };
+  if (prev > 0 && cur <= 0) return { t: '赤字転換', s: -1 };
+  return cur > prev ? { t: '赤字縮小', s: 1 } : { t: '赤字拡大', s: -1 };
+}
+function kpiCards(style, x, y, w, D, TS) {
+  const o = [], n = D.items.length, gap = 12 * TS, cw = (w - gap * (n - 1)) / n;
+  const st = String(style);
+  const H = 92 * TS;
+  const ink = c => lum(c) > 0.62 ? shade(c, 0.5) : c;
+  const arrow = s => s > 0 ? '▲' : s < 0 ? '▼' : '';
+  D.items.forEach((it, i) => {
+    const cx = x + i * (cw + gap), c = it.color, dc = it.d.s > 0 ? UP : it.d.s < 0 ? DOWN : '#6b7280';
+    const L = 14 * TS, pad = 14 * TS;
+    let bg = '#fff', stroke = '#e5e7eb', sw = 1, lab = '#6b7280', val = '#111827', sub = '#9ca3af', dCol = dc, rx = 10 * TS;
+    const vText = it.v, vFs = Math.min(26 * TS, (cw - pad * 2 - (st === '9' ? cw * 0.38 : 0)) / Math.max(1, tw(vText, 1, 800)) * 0.95);
+    if (st === '2') { bg = '#f8fafc'; stroke = 'none'; o.push(`<rect x="${cx}" y="${y}" width="${cw}" height="${H}" rx="${rx}" fill="${bg}"/><rect x="${cx}" y="${y}" width="${5 * TS}" height="${H}" rx="${2 * TS}" fill="${c}"/>`); val = ink(c); }
+    else if (st === '3') { bg = mix(c, '#ffffff', 0.86); stroke = 'none'; val = ink(shade(c, 0.15)); lab = ink(shade(c, 0.25)); }
+    else if (st === '4') { bg = '#111827'; stroke = 'none'; lab = '#9ca3af'; val = '#ffffff'; sub = '#6b7280'; dCol = it.d.s > 0 ? '#34d399' : it.d.s < 0 ? '#f87171' : '#9ca3af'; }
+    else if (st === '5') { o.push(`<rect x="${cx}" y="${y}" width="${cw}" height="${H}" rx="${6 * TS}" fill="#fff" stroke="#e5e7eb"/><rect x="${cx}" y="${y}" width="${cw}" height="${4 * TS}" fill="${c}"/>`); stroke = 'none'; bg = 'none'; }
+    else if (st === '6') { bg = 'none'; stroke = 'none'; if (i > 0) o.push(`<line x1="${cx - gap / 2}" x2="${cx - gap / 2}" y1="${y + 6 * TS}" y2="${y + H - 6 * TS}" stroke="#d1d5db"/>`); val = ink(c); }
+    else if (st === '7') { const gid = 'kg' + i + Math.random().toString(36).slice(2, 6); o.push(`<defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${shade(c, lum(c) > 0.6 ? 0.45 : 0.15)}"/><stop offset="1" stop-color="${lum(c) > 0.6 ? shade(c, 0.2) : mix(c, '#ffffff', 0.25)}"/></linearGradient></defs>`); bg = `url(#${gid})`; stroke = 'none'; lab = 'rgba(255,255,255,.85)'; val = '#fff'; sub = 'rgba(255,255,255,.7)'; dCol = '#fff'; }
+    else if (st === '8') { stroke = c; sw = 2.4 * TS; val = ink(c); lab = ink(c); }
+    if (bg !== 'none' && st !== '2' && st !== '5') o.push(`<rect x="${cx}" y="${y}" width="${cw}" height="${H}" rx="${rx}" fill="${bg}" ${stroke !== 'none' ? `stroke="${stroke}" stroke-width="${sw}"` : ''}/>`);
+    const lx = cx + pad + (st === '2' ? 4 * TS : 0);
+    // ラベルと期
+    o.push(`<text x="${lx}" y="${y + pad + L * 0.8}" font-size="${(13 * TS).toFixed(1)}" font-weight="600" fill="${lab}">${esc(it.label)}</text>`);
+    if (st !== '6') o.push(`<text x="${cx + cw - pad}" y="${y + pad + L * 0.8}" font-size="${(11 * TS).toFixed(1)}" fill="${sub}" text-anchor="end">${esc(D.per)}</text>`);
+    if (st === '10') {
+      // 増減を大きく、金額は小さく
+      const dt = it.d.t ? arrow(it.d.s) + it.d.t.replace(/^\+/, '') : '–';
+      const fs = Math.min(30 * TS, (cw - pad * 2) / Math.max(1, tw(dt, 1, 800)) * 0.95);
+      o.push(`<text x="${lx}" y="${y + pad + L + fs * 0.95}" font-size="${fs.toFixed(1)}" font-weight="800" fill="${dc}">${esc(dt)}</text>`);
+      o.push(`<text x="${lx}" y="${y + H - pad * 0.7}" font-size="${(13 * TS).toFixed(1)}" font-weight="600" fill="#374151">${esc(vText)}<tspan fill="#9ca3af" font-weight="400" font-size="${(11 * TS).toFixed(1)}">　${esc(D.dlab)}</tspan></text>`);
+      return;
+    }
+    const vy = y + pad + L + vFs * 0.95;
+    o.push(`<text x="${lx}" y="${vy.toFixed(1)}" font-size="${vFs.toFixed(1)}" font-weight="800" fill="${val}">${esc(vText)}</text>`);
+    // 増減
+    if (it.d.t) {
+      const dt = `${arrow(it.d.s)} ${it.d.t}`, dfs = 12 * TS, dy = y + H - pad * 0.75;
+      if (st === '1' || st === '5' || st === '9') {
+        const pw = tw(dt, dfs, 700) + 12 * TS;
+        o.push(`<rect x="${lx}" y="${dy - dfs * 1.05}" width="${pw}" height="${dfs * 1.5}" rx="${dfs * 0.75}" fill="${mix(dc, '#ffffff', 0.88)}"/>`);
+        o.push(`<text x="${lx + 6 * TS}" y="${dy}" font-size="${dfs.toFixed(1)}" font-weight="700" fill="${dc}">${esc(dt)}</text>`);
+        o.push(`<text x="${lx + pw + 6 * TS}" y="${dy}" font-size="${(11 * TS).toFixed(1)}" fill="#9ca3af">${esc(D.dlab)}</text>`);
+      } else {
+        o.push(`<text x="${lx}" y="${dy}" font-size="${dfs.toFixed(1)}" font-weight="700" fill="${dCol}">${esc(dt)}<tspan font-weight="400" fill="${sub}" font-size="${(11 * TS).toFixed(1)}">　${esc(D.dlab)}</tspan></text>`);
+      }
+    }
+    // 小さな推移グラフ（直近 12 期）
+    if (st === '9' && it.spark && it.spark.filter(v => v != null).length > 1) {
+      const sp = it.spark, sw2 = cw * 0.36, sh = H * 0.42, sx = cx + cw - pad - sw2, sy = y + H - pad * 0.6 - sh;
+      const vs = sp.filter(v => v != null), mn = Math.min(...vs), mx = Math.max(...vs), rng = (mx - mn) || 1;
+      let d = '';
+      sp.forEach((v, j) => { if (v == null) return; const px = sx + j / (sp.length - 1) * sw2, py = sy + sh - (v - mn) / rng * sh; d += (d ? 'L' : 'M') + px.toFixed(1) + ' ' + py.toFixed(1); });
+      o.push(`<path d="${d}" fill="none" stroke="${ink(c)}" stroke-width="${1.8 * TS}" stroke-linejoin="round" stroke-linecap="round"/>`);
+      const lv = sp[sp.length - 1]; if (lv != null) o.push(`<circle cx="${sx + sw2}" cy="${sy + sh - (lv - mn) / rng * sh}" r="${2.6 * TS}" fill="${ink(c)}"/>`);
+    }
+  });
+  return { h: H, svg: o.join('') };
 }
 
 /* =========================================================
