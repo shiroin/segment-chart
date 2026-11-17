@@ -257,6 +257,8 @@ console.log('3. Claude 版：会社比較');
   await p.selectOption('#cmpSegPick select >> nth=0', 'Alpha'); await p.waitForTimeout(300);
   ok(await p.$eval('#cmpSegPick select', e => e.value) === 'Alpha' && await p.evaluate(v => JSON.stringify(M.values) !== v, v1), '会社ごとにセグメントを変えられる');
   await p.screenshot({ path: SHOTS + '3f-segtrend.png' });
+  await p.selectOption('#cmpSegPick select >> nth=1', '__TOTAL__'); await p.waitForTimeout(300);
+  ok(await p.evaluate(() => M.segs[1].subtitle.startsWith('会社全体') && M.segs[0].subtitle.startsWith('クライアント')), 'ある会社のセグメントと、別の会社の会社全体を並べられる');
   await p.selectOption('#cmpView', 'trend');
   ok(await p.$$eval('#chart svg text', a => a.some(t => /全社業績の比較/.test(t.textContent))), '業績の推移に戻せる');
   await p.selectOption('#cmpAlign', 'latest');

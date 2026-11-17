@@ -201,7 +201,7 @@ body.gas .nogas{display:none!important}
         <div id="cmpSegPickBox" style="display:none;margin-bottom:6px">
           <input type="text" id="cmpSegKw" placeholder="セグメント名でまとめて選ぶ（例：データセンター, Data Center）" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12px;margin-bottom:6px">
           <div id="cmpSegPick" class="segpick"></div>
-          <p class="note" style="margin-top:4px">会社ごとに比べるセグメントを選びます。名前の一部を入れると、各社でその名前を含むセグメントをまとめて選びます（「,」で区切ると、どれかを含むもの）。</p>
+          <p class="note" style="margin-top:4px">会社ごとに比べるセグメント（または「会社全体」）を選びます。名前の一部を入れると、各社でその名前を含むセグメントをまとめて選びます（「,」で区切ると、どれかを含むもの。「全社」で会社全体）。</p>
         </div>
         <div id="cmpSegOpts" style="display:none">
           <div class="field"><span>値</span><select id="cmpSegMetric" style="width:190px"><option value="s">売上高</option><option value="o">利益</option></select></div>
@@ -2500,15 +2500,25 @@ function alignCompany(r, mode) {
    各社で選んだ 1 つのセグメントの売上・利益を、会社全体の代わりに使って「業績の推移」と同じ形で並べる */
 const segNamesOf = r => { const sg = r.seg || {}; return [...new Set(['sQ', 'oQ', 'sY', 'oY'].flatMap(k => (sg[k] || { names: [] }).names))]; };
 const segHasVals = (r, n) => ['sQ', 'oQ', 'sY', 'oY'].some(k => ((r.seg || {})[k] || { rows: [] }).rows.some(([, v]) => v[n] != null));
+// 「会社全体」も選べる（ある会社はセグメント、別の会社は全社、という比較のため）
+const SEG_TOTAL = '__TOTAL__';
+const hasTotalRows = r => !!((r.Q && r.Q.length) || (r.Y && r.Y.length));
 function pickSegFor(c, r) {
   const names = segNamesOf(r).filter(n => segHasVals(r, n));
-  if (CMP.segPick[c.id] && names.includes(CMP.segPick[c.id])) return CMP.segPick[c.id];
+  const pick = CMP.segPick[c.id];
+  if (pick === SEG_TOTAL && hasTotalRows(r)) return SEG_TOTAL;
+  if (pick && names.includes(pick)) return pick;
   const kws = String(CMP.segKw || '').split(/[,、，]/).map(x => half(x).trim().toLowerCase()).filter(Boolean);
   const lab = n => half(segLabelOf({ r }, n) + ' ' + n).toLowerCase();
-  if (kws.length) { const hit = names.find(n => kws.some(k => lab(n).includes(k))); if (hit) return hit; }
-  return names.find(n => !SEG_ADJ.test(n)) || names[0] || '';
+  if (kws.length) {
+    if (kws.some(k => /^(全社|会社全体|連結|total)$/.test(k)) && hasTotalRows(r)) return SEG_TOTAL;
+    const hit = names.find(n => kws.some(k => lab(n).includes(k))); if (hit) return hit;
+  }
+  // セグメントのデータがない会社は会社全体
+  return names.find(n => !SEG_ADJ.test(n)) || names[0] || (hasTotalRows(r) ? SEG_TOTAL : '');
 }
 function segAsTotal(r, name) {
+  if (name === SEG_TOTAL) return { ...r, segName: SEG_TOTAL };
   const sg = r.seg || {}, merge = (sk, ok) => {
     const m = new Map();
     ((sg[sk] || { rows: [] }).rows).forEach(([p, v]) => { if (v[name] != null) { const x = m.get(p) || [p, null, null]; x[1] = v[name]; m.set(p, x); } });
@@ -2521,7 +2531,8 @@ function renderSegPick() {
   const list = CMP.loaded || [];
   $('#cmpSegPick').innerHTML = list.map(({ c, r }) => {
     const names = segNamesOf(r).filter(n => segHasVals(r, n)), cur = pickSegFor(c, r);
-    return `<label><span>${esc(cmpName(c))}</span><select data-id="${c.id}">${names.length ? names.map(n => `<option value="${esc(n)}" ${n === cur ? 'selected' : ''}>${esc(segLabelOf({ r }, n))}</option>`).join('') : '<option value="">セグメントのデータなし</option>'}</select></label>`;
+    const opts = (hasTotalRows(r) ? `<option value="${SEG_TOTAL}" ${cur === SEG_TOTAL ? 'selected' : ''}>会社全体</option>` : '') + names.map(n => `<option value="${esc(n)}" ${n === cur ? 'selected' : ''}>${esc(segLabelOf({ r }, n))}</option>`).join('');
+    return `<label><span>${esc(cmpName(c))}</span><select data-id="${c.id}">${opts || '<option value="">データなし</option>'}</select></label>`;
   }).join('');
 }
 function buildCompare() {
@@ -2561,7 +2572,7 @@ function buildCompare() {
         rows.push([label, per, val(x.sa), val(x.op)]);
       });
     }
-    segRows.push([label, [r.segName ? segLabelOf({ r }, r.segName) : '', c.tk, r.fyMonth ? r.fyMonth + '月決算' : '', r.cur, r.pbt ? '利益は税引前' : ''].filter(Boolean).join('・'), pal[i % pal.length]]);
+    segRows.push([label, [r.segName ? (r.segName === SEG_TOTAL ? '会社全体' : segLabelOf({ r }, r.segName)) : '', c.tk, r.fyMonth ? r.fyMonth + '月決算' : '', r.cur, r.pbt ? '利益は税引前' : ''].filter(Boolean).join('・'), pal[i % pal.length]]);
     if (r.pbt) pbtLabels.push(label);
   });
   const convs = [...new Set(ok.map(x => x.r.cur))].filter(c => c !== t).map(c => { const f = CMP.fx[c] / CMP.fx[t]; return f >= 1 ? `1${curLabel(c)}=${+f.toPrecision(4)}${curLabel(t)}` : `1${curLabel(t)}=${+(1 / f).toPrecision(4)}${curLabel(c)}`; });
