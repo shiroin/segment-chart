@@ -121,6 +121,10 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .segpick{border:1px solid var(--line);border-radius:8px;background:#fff;max-height:260px;overflow:auto}
 .segpick label{display:grid;grid-template-columns:1fr 150px;gap:6px;align-items:center;padding:5px 8px;font-size:12px;border-bottom:1px solid #f3f4f6}
 .segpick select{width:100%;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:12px;padding:3px}
+.logorow{display:grid;grid-template-columns:64px 1fr auto auto;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px}
+.logorow .lg{height:26px;display:flex;align-items:center;justify-content:center;background:#fafafa;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.logorow .lg img{max-width:60px;max-height:22px}.logorow .lg i{font-style:normal;color:#9ca3af;font-size:10.5px}
+.btn.mini{padding:3px 7px;font-size:11px;cursor:pointer}
 .foot{display:flex;justify-content:space-between;color:var(--mute);font-size:11.5px;margin-top:10px;padding:0 4px}
 #tip{position:fixed;pointer-events:none;background:rgba(17,24,39,.94);color:#fff;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.55;opacity:0;transition:opacity .08s;z-index:20;min-width:170px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
 #tip .h{display:flex;align-items:center;gap:6px;font-weight:700;margin-bottom:4px}
@@ -205,6 +209,8 @@ body.gas .nogas{display:none!important}
           <div class="field"><span>期</span><select id="cmpSegPer" style="width:190px"></select></div>
           <div class="field"><span>色</span><select id="cmpSegColor" style="width:190px"><option value="shade">会社の色の濃淡</option><option value="sheet">シートのセグメント色</option></select></div>
         </div>
+        <div class="field" id="cmpDirRow"><span>並べ方</span><select id="cmpDir" style="width:190px"><option value="h">横に並べる</option><option value="v">縦に並べる（ロゴ付き）</option></select></div>
+        <div id="cmpLogoBox" style="display:none;margin-bottom:6px"><div class="note" style="margin:2px 0 4px">ロゴ（画像を選ぶと保存され、次からも使います）</div><div id="cmpLogos"></div></div>
         <div class="field" id="cmpAlignRow"><span>時期のそろえ方</span><select id="cmpAlign" style="width:190px">
           <option value="cal">暦年の四半期にそろえる</option>
           <option value="latest">最新期を右端にそろえる</option>
@@ -941,6 +947,7 @@ function render() {
   const host = $('#chart');
   if (!M) return;
   if (SOURCE === 'compare' && (CMP.view === 'donut' || CMP.view === 'stack') && CMP.loaded && CMP.loaded.some(x => x.r.seg)) { $('#tip').style.opacity = 0; return renderSegView(); }
+  if (SOURCE === 'compare' && CMP.dir === 'v' && (CMP.view === 'trend' || CMP.view === 'segtrend')) { $('#tip').style.opacity = 0; return renderRows(); }
   const totalOnly = isTotalOnly();
   if (!totalOnly && SOURCE !== 'compare' && (O.layout === 'stackO' || O.layout === 'stackS')) { $('#tip').style.opacity = 0; return renderStackTrend(); }
   $('#tip').style.opacity = 0;
@@ -1864,6 +1871,174 @@ async function downloadTemplate() {
 }
 
 /* =========================================================
+   会社比較：縦に並べる（CMP.dir = 'v'）。1 社 1 行の横長グラフを縦に積み、左にロゴ（なければ社名）
+   ========================================================= */
+const LOGO_KEY = c => 'logo:' + (c.tk || c.id);
+function logoOf(c) { if (!c) return null; if (CMP.logos[c.id]) return CMP.logos[c.id]; const s = store.load(); return (s.logos || {})[LOGO_KEY(c)] || null; }
+function saveLogo(c, url) {
+  CMP.logos[c.id] = url;
+  try { const s = store.load(); const L = Object.assign({}, s.logos || {}); if (url) L[LOGO_KEY(c)] = url; else delete L[LOGO_KEY(c)]; store.save({ logos: L }); } catch (e) {}
+}
+// 画像ファイルを横幅 320px 以内の PNG（data URL）にして保存する
+function readLogoFile(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => { const img = new Image(); img.onload = () => { const k = Math.min(1, 320 / img.width, 160 / img.height); const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k)); cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); res(cv.toDataURL('image/png')); }; img.onerror = rej; img.src = fr.result; };
+    fr.onerror = rej; fr.readAsDataURL(file);
+  });
+}
+// Apps Script 版：マスターの「指定ロゴ」（Google ドライブ）をサーバー側で読む（Code.gs の getLogos。古い Code.gs なら何もしない）
+// Claude 版：Google ドライブのコネクタ（download_file_content）でロゴを読む
+function blobFrom(res) {
+  let found = null;
+  const walk = x => { if (!x || found || typeof x !== 'object') return;
+    const b = x.blob || x.data || x.base64 || x.content;
+    if (typeof b === 'string' && b.length > 40 && /^[A-Za-z0-9+/=\s]+$/.test(b.slice(0, 200))) { found = { b: b.replace(/\s/g, ''), m: x.mimeType || x.mime_type || '' }; return; }
+    Object.values(x).forEach(walk); };
+  walk(res);
+  if (!found) return null;
+  const m = found.m || (found.b.startsWith('iVBOR') ? 'image/png' : found.b.startsWith('/9j/') ? 'image/jpeg' : /^(PHN2|PD94)/.test(found.b) ? 'image/svg+xml' : 'image/png');
+  return `data:${m};base64,${found.b}`;
+}
+async function logosViaMcp(ids) {
+  const mcp = await getMcp(); if (!mcp) return null;
+  const out = {};
+  await Promise.all(ids.map(async id => { try { out[id] = blobFrom(await mcp.callTool('Google Drive', 'download_file_content', { fileId: id }, { cache: true })); } catch (e) { out[id] = null; } }));
+  return Object.values(out).some(Boolean) ? out : null;
+}
+async function ensureLogos() {
+  if (IS_WEB) return;
+  const need = (CMP.rowsMeta || []).map(x => x.c).filter(c => c && c.logoId && !logoOf(c) && !(CMP.logoTried || {})[c.id]);
+  if (!need.length) return;
+  CMP.logoTried = CMP.logoTried || {}; need.forEach(c => { CMP.logoTried[c.id] = true; });
+  const got = IS_GAS ? await new Promise(res => google.script.run.withSuccessHandler(res).withFailureHandler(() => res(null)).getLogos(need.map(c => c.logoId)))
+    : await logosViaMcp(need.map(c => c.logoId));
+  if (!got) { CMP.logoNote = IS_GAS ? 'マスターのロゴを自動で読むには、Apps Script の Code.gs の更新が必要です（下で画像を選んでも付けられます）' : 'マスターのロゴを読むには Google ドライブとの連携が必要です（下で画像を選んでも付けられます）'; renderLogoList(); return; }
+  need.forEach(c => { if (got[c.logoId]) saveLogo(c, got[c.logoId]); });
+  renderLogoList(); render();
+}
+function renderLogoList() {
+  const box = $('#cmpLogos'); if (!box) return;
+  const rows = CMP.rowsMeta || [];
+  box.innerHTML = rows.map(({ c, label }) => { const u = logoOf(c);
+    return `<div class="logorow"><span class="lg">${u ? `<img src="${u}" alt="">` : '<i>なし</i>'}</span><span class="nm2">${esc(label)}</span>
+      <label class="btn mini">画像を選ぶ<input type="file" accept="image/*" data-id="${c.id}" hidden></label>${u ? `<button class="btn mini" data-del="${c.id}" title="ロゴを外す">×</button>` : ''}</div>`; }).join('') +
+    (CMP.logoNote ? `<p class="note" style="color:#b45309;margin-top:4px">${esc(CMP.logoNote)}</p>` : '');
+}
+function renderRows() {
+  const host = $('#chart');
+  const segs = M.segs.filter(s => s.visible), per = visiblePeriods();
+  $('#footL').textContent = `${segs.length}社・${per.length}${granWord()}を表示中`;
+  if (!segs.length || !per.length) { host.innerHTML = '<div class="empty">会社を選んでください</div>'; return; }
+  let [Wpx, Hpx] = chartSize(host);
+  // 縦並びは会社が多いほど高くする（「画面に合わせる」のとき）
+  if (O.ratio === 'fit') Hpx = Math.max(Hpx, Math.round(Math.min(Wpx * 0.32, 230) * segs.length + 130));
+  const F = clamp(Math.sqrt(Wpx * Hpx / (1000 * 540)), 0.62, 1.7);
+  const W = Wpx / F, HH = Hpx / F, TS = clamp(0.82 / F, 1, 1.5);
+  const FS = { leg: 13.5 * TS, tick: 10.5 * TS, val: 12 * TS, xq: 11 * TS, name: 15 * TS, sub: 10 * TS };
+  const K = scaleK(), u = UNIT_LABEL[dispUnitValue()] || '', mc = O.marginColor;
+  const useS = showS(), useO = showO();
+  const meta = Object.fromEntries((CMP.rowsMeta || []).map(x => [x.label, x.c]));
+  const o = [];
+  o.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Wpx}" height="${Hpx}" viewBox="0 0 ${W.toFixed(2)} ${HH.toFixed(2)}" font-family="${esc(FONT)}" style="font-family:${esc(FONT)}">`);
+  o.push(`<rect width="${W}" height="${HH}" fill="#ffffff"/>`);
+  // タイトルと凡例
+  const title = titleText();
+  const showM = O.showMargin;
+  const leg = [...(useS ? [['s', '売上']] : []), ...(useO ? [['o', '営業利益']] : []), ...(showM ? [['m', '営業利益率（右軸）']] : [])];
+  const legW = leg.reduce((a, [, t]) => a + tw(t, FS.leg, 500) + 6 + 18 * TS + 18 * TS, 0);
+  let y = 8, tW = 0;
+  if (title) { const tw0 = wrapText(title, 21 * Math.min(TS, 1.2), 700, W - 32, 2, 13); tW = Math.max(...tw0.lines.map(l => tw(l, tw0.fs, 700))); o.push(mtext(16, y + tw0.fs + 2, tw0, 'font-weight="700" fill="#111827"', 'start')); y += tw0.h + 6; }
+  // 凡例はタイトルの右。入りきらなければタイトルの下の行に
+  const legRight = !title || 16 + tW + 24 + legW <= W - 16;
+  let lx = legRight ? W - 16 : 16 + legW; const ly = legRight ? 8 + FS.leg + 4 : y + FS.leg;
+  [...leg].reverse().forEach(([k, t]) => {
+    const w = tw(t, FS.leg, 500); lx -= w; o.push(`<text x="${lx}" y="${ly}" font-size="${FS.leg.toFixed(1)}" font-weight="500" fill="#374151">${esc(t)}</text>`); lx -= 6;
+    const sw = 18 * TS; lx -= sw;
+    if (k === 'm') o.push(`<line x1="${lx}" x2="${lx + sw}" y1="${ly - FS.leg * 0.35}" y2="${ly - FS.leg * 0.35}" stroke="${mc}" stroke-width="${2.2 * TS}"/>`);
+    else o.push(`<rect x="${lx}" y="${ly - FS.leg * 0.8}" width="${sw}" height="${FS.leg * 0.9}" fill="${k === 's' ? '#b8bcc2' : '#1f1f1f'}"/>`);
+    lx -= 18 * TS;
+  });
+  y = Math.max(y, ly + 8);
+  const note = String(O.note || '').trim(), noteW = note ? wrapText(note, 10, 400, W - 32, 3, 8) : null;
+  const noteH = noteW ? noteW.h + 4 : 0, xLabH = FS.xq + 10;
+  const top = y + 4, bot = HH - noteH - xLabH - 6, n = segs.length, rowH = (bot - top) / n;
+  const LW = clamp(W * 0.15, 90 * TS, 190 * TS);          // 左のロゴ・社名の欄
+  const tickW = 52 * TS, rW = showM ? 44 * TS : 10;
+  const x0 = LW + tickW, x1 = W - rW, pW = x1 - x0, m = per.length, band = pW / m, barW = Math.max(1, band * (m > 40 ? 0.8 : 0.72));
+  segs.forEach((s, k) => {
+    const rt = top + k * rowH, pt = rt + 10, pb = rt + rowH - 8, ph = pb - pt;
+    if (k > 0) o.push(`<line x1="12" x2="${W - 12}" y1="${rt.toFixed(1)}" y2="${rt.toFixed(1)}" stroke="#e5e7eb"/>`);
+    // ロゴ（なければ社名）
+    const c = meta[s.label], logo = logoOf(c);
+    const lbW = LW - 24, lbH = Math.min(rowH * 0.36, 46 * TS), lyTop = rt + rowH / 2 - lbH / 2 - (logo ? 8 * TS : 0);
+    if (logo) {
+      o.push(`<image href="${logo}" xlink:href="${logo}" x="14" y="${lyTop.toFixed(1)}" width="${lbW.toFixed(1)}" height="${lbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet"/>`);
+      const sw2 = wrapText(s.label, FS.sub, 500, lbW, 2, 8);
+      o.push(mtext(14 + lbW / 2, lyTop + lbH + 4 + sw2.fs, sw2, 'fill="#6b7280" font-weight="500"'));
+    } else {
+      const nw = wrapText(s.label, FS.name, 700, lbW, 3, 9), sw2 = s.subtitle ? wrapText(s.subtitle, FS.sub, 400, lbW, 2, 8) : null;
+      const hh = nw.h + (sw2 ? sw2.h + 2 : 0), yy = rt + rowH / 2 - hh / 2;
+      o.push(mtext(14 + lbW / 2, yy + nw.fs, nw, 'font-weight="700" fill="#111827"'));
+      if (sw2) o.push(mtext(14 + lbW / 2, yy + nw.h + 2 + sw2.fs, sw2, 'fill="#6b7280"'));
+    }
+    // 目盛り（会社ごと。左右の 0 の高さをそろえる）
+    let mx = 0, mn = 0, rmx = 0, rmn = 0;
+    per.forEach(p => { const v = (M.values[s.name] || {})[p.key]; if (!v) return;
+      [useS ? v.sales : null, useO ? v.op : null].forEach(x => { if (x != null) { mx = Math.max(mx, x * K); mn = Math.min(mn, x * K); } });
+      const g = margin(v); if (g != null) { rmx = Math.max(rmx, g); rmn = Math.min(rmn, g); } });
+    const nT = Math.max(2, Math.min(4, Math.floor(ph / (FS.tick * 2.2))));
+    let step = niceUp((mx - mn) / nT || 1); let kp = Math.max(1, Math.ceil(mx / step - 1e-9)), kn = Math.max(0, Math.ceil(-mn / step - 1e-9));
+    if (kp + kn > nT + 1) { step = niceUp((mx - mn) / (nT - 0.5)); kp = Math.max(1, Math.ceil(mx / step - 1e-9)); kn = Math.max(0, Math.ceil(-mn / step - 1e-9)); }
+    const rs = niceUp(Math.max(rmx / kp, kn ? -rmn / kn : 0, 0.01));
+    const yv = v => pt + (kp * step - v) / ((kp + kn) * step) * ph, yr = g => pt + (kp * rs - g) / ((kp + kn) * rs) * ph;
+    for (let i = -kn; i <= kp; i++) {
+      const yy = yv(i * step);
+      o.push(`<line x1="${x0}" x2="${x1}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" stroke="${i === 0 ? '#9ca3af' : '#eef0f3'}"/>`);
+      o.push(`<text x="${x0 - 6}" y="${(yy + FS.tick * 0.35).toFixed(1)}" font-size="${FS.tick.toFixed(1)}" fill="#6b7280" text-anchor="end">${fmtN(i * step + 0, step)}</text>`);
+      if (showM) o.push(`<text x="${x1 + 6}" y="${(yy + FS.tick * 0.35).toFixed(1)}" font-size="${FS.tick.toFixed(1)}" fill="${mix(mc, '#6b7280', 0.25)}">${fmtP(i * rs + 0, rs)}</text>`);
+    }
+    // 年の区切り
+    per.forEach((p, i) => { if (i > 0 && p.ylab && per[i - 1].ylab !== p.ylab) o.push(`<line x1="${(x0 + i * band).toFixed(1)}" x2="${(x0 + i * band).toFixed(1)}" y1="${pt}" y2="${pb}" stroke="#f1f2f4"/>`); });
+    // 棒
+    // 縦並びは黒（営業利益）と灰色（売上）で統一（会社はロゴで見分ける）
+    const cS = '#b8bcc2', cO = '#1f1f1f';
+    o.push(`<g>`);
+    per.forEach((p, i) => {
+      const v = (M.values[s.name] || {})[p.key]; if (!v) return;
+      const x = x0 + i * band + (band - barW) / 2;
+      const bar = (val, fill, nm) => { if (val == null) return; const a = yv(Math.max(val * K, 0)), b = yv(Math.min(val * K, 0)); o.push(`<rect x="${x.toFixed(2)}" y="${a.toFixed(2)}" width="${barW.toFixed(2)}" height="${Math.max(0.4, b - a).toFixed(2)}" fill="${fill}"><title>${esc(s.label)}　${esc(plab(p))}　${nm}：${fmtV(val * K)}${esc(u + curLabel(effCur()))}</title></rect>`); };
+      if (useS) bar(v.sales, useO ? cS : '#6b7280', '売上');
+      if (useO) bar(v.op, cO, '営業利益');
+    });
+    o.push('</g>');
+    // 利益率の線
+    if (showM && s.showMargin !== false) {
+      let d = '', prevI = -9, last = null;
+      per.forEach((p, i) => { const g = margin((M.values[s.name] || {})[p.key]); if (g == null) return; const cx = x0 + i * band + band / 2, cy = clamp(yr(g), pt - 4, pb + 4); d += (i === prevI + 1 && d ? 'L' : 'M') + cx.toFixed(1) + ' ' + cy.toFixed(1); prevI = i; last = { cx, cy, g }; });
+      if (d) o.push(`<path d="${d}" fill="none" stroke="${s.marginColor || mc}" stroke-width="${1.8 * Math.min(TS, 1.3)}" stroke-linejoin="round"/>`);
+      if (last && O.showLast) o.push(`<text x="${last.cx}" y="${(last.cy - 7).toFixed(1)}" font-size="${FS.val.toFixed(1)}" font-weight="700" fill="${s.marginColor || mc}" text-anchor="end" stroke="#fff" stroke-width="3" paint-order="stroke">${(last.g * 100).toFixed(1)}%</text>`);
+    }
+    // 最新の売上・利益
+    if (O.showLastBar) {
+      let li = -1; per.forEach((p, i) => { if ((M.values[s.name] || {})[p.key]) li = i; });
+      if (li >= 0) { const v = M.values[s.name][per[li].key], cx = x0 + li * band + band / 2;
+        if (useS && v.sales != null) o.push(`<text x="${cx}" y="${(yv(Math.max(v.sales * K, 0)) - 4).toFixed(1)}" font-size="${FS.val.toFixed(1)}" font-weight="700" fill="${shade(cS, 0.5)}" text-anchor="end" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtV(v.sales * K)}</text>`); }
+    }
+  });
+  // 横軸（いちばん下だけ）：年
+  const groups = []; per.forEach((p, i) => { const g = groups[groups.length - 1]; const lab = p.ylab || p.qlab; if (g && g.lab === lab) g.e = i; else groups.push({ lab, s: i, e: i }); });
+  let lastR = -1e9;
+  groups.forEach(g => { let lab = g.lab; const w0 = (g.e - g.s + 1) * band; if (tw(lab, FS.xq, 500) > w0 - 2) lab = "'" + String(lab).replace(/\D/g, '').slice(2, 4); const cx = x0 + (g.s + g.e + 1) / 2 * band, lw = tw(lab, FS.xq, 500); if (cx - lw / 2 < lastR + 4) return; lastR = cx + lw / 2;
+    o.push(`<text x="${cx.toFixed(1)}" y="${(bot + FS.xq + 4).toFixed(1)}" font-size="${FS.xq.toFixed(1)}" font-weight="500" fill="#4b5563" text-anchor="middle">${esc(lab)}</text>`); });
+  if (noteW) o.push(mtext(16, HH - noteH + noteW.fs, noteW, 'fill="#9ca3af"', 'start'));
+  const ut = unitText(); o.push(`<text x="${W - 16}" y="${HH - 6}" font-size="10" fill="#9ca3af" text-anchor="end">単位：${esc(ut)}</text>`);
+  o.push('</svg>');
+  host.innerHTML = o.join('');
+  LAST = null;
+}
+
+/* =========================================================
    会社全体だけのときの指標カード（売上高・営業利益・営業利益率）。10 種類のデザイン（O.cardStyle）
    ========================================================= */
 const CARD_STYLES = [
@@ -2066,7 +2241,7 @@ function renderStackTrend() {
 const DEFAULT_MASTER = 'https://docs.google.com/spreadsheets/d/1NMjMQ6JeUuRRyy4X7m79YCTnklUgkdE76407QYY5ahQ/edit';
 // 1通貨あたりの円（2026年8月末ごろの目安。画面で書き換え可）
 const FX_JPY = { JPY: 1, USD: 160, EUR: 185.5, CNY: 23.5, TWD: 5.0, HKD: 20.4, KRW: 0.104, DKK: 24.8, SEK: 16.7, NOK: 17.0, CHF: 197.9, GBP: 216.8, SGD: 125.6, AUD: 114.7, CAD: 115.1, INR: 1.69 };
-const CMP = { companies: [], sel: [], raw: {}, fx: Object.assign({}, FX_JPY), cur: 'JPY', align: 'cal', orig: {}, view: 'trend', segPick: {}, segKw: '', segMetric: 's', segGran: 'Q', segPer: null, segColor: 'shade' };
+const CMP = { companies: [], sel: [], raw: {}, fx: Object.assign({}, FX_JPY), cur: 'JPY', align: 'cal', orig: {}, view: 'trend', dir: 'h', logos: {}, segPick: {}, segKw: '', segMetric: 's', segGran: 'Q', segPer: null, segColor: 'shade' };
 
 /* シートの値を読む（Apps Script 版 / Claude 版で取得経路が違う） */
 async function readRanges(id, ranges) {
@@ -2152,7 +2327,7 @@ async function loadMaster() {
     const hi = rows.findIndex(r => r.some(c => String(c).trim() === 'Financials'));
     const h = rows[hi].map(c => String(c).trim());
     const ci = (...names) => h.findIndex(x => names.includes(x));
-    const C = { tk: ci('Ticker'), en: ci('企業名'), ja: ci('日本名'), c1: ci('業種カテゴリー1'), c2: ci('業種カテゴリー2'), hq: ci('本拠地'), fy: ci('決算期'), ed: ci('決算日'), cur: ci('通貨'), fin: ci('Financials') };
+    const C = { tk: ci('Ticker'), en: ci('企業名'), ja: ci('日本名'), c1: ci('業種カテゴリー1'), c2: ci('業種カテゴリー2'), hq: ci('本拠地'), fy: ci('決算期'), ed: ci('決算日'), cur: ci('通貨'), fin: ci('Financials'), logo: ci('指定ロゴ') };
     if (C.fin < 0) C.fin = 27;  // AB列
     // カテゴリー（AV〜EE 列。見出しがカテゴリー名、各社の行に 1 が入っていればその仲間）
     const colN = a => a.split('').reduce((x, ch) => x * 26 + ch.charCodeAt(0) - 64, 0) - 1;
@@ -2164,7 +2339,7 @@ async function loadMaster() {
       if (!fid || seen.has(fid)) return null; seen.add(fid);
       const g = i => i >= 0 ? String(r[i] ?? '').trim() : '';
       const groups = groupCols.filter(([j]) => /^(1|1\.0|true|○|◯|〇|✓)$/i.test(String(r[j] ?? '').trim())).map(([, nm]) => nm);
-      return { id: fid, tk: g(C.tk), en: g(C.en), ja: g(C.ja), c1: g(C.c1), c2: g(C.c2), hq: g(C.hq), fy: g(C.fy), cur: g(C.cur), ed: parseYmd(g(C.ed)), groups };
+      return { id: fid, tk: g(C.tk), en: g(C.en), ja: g(C.ja), c1: g(C.c1), c2: g(C.c2), hq: g(C.hq), fy: g(C.fy), cur: g(C.cur), ed: parseYmd(g(C.ed)), logoId: (g(C.logo).match(/(?:\/d\/|id=)([\w-]{20,})/) || [])[1] || '', groups };
     }).filter(Boolean);
     // 同じ名前の列が複数あってもまとめて1つのカテゴリーにする（並びはシートの列順）
     const gNames = [...new Set(groupCols.map(([, nm]) => nm))];
@@ -2366,8 +2541,10 @@ function buildCompare() {
   const segRows = [['セグメント', 'サブタイトル', '色']];
   const used = [], pbtLabels = [];
   CMP.labels = used;
+  CMP.rowsMeta = [];
   ok.forEach(({ c, r }, i) => {
     let label = cmpName(c); while (used.includes(label)) label += '＊'; used.push(label);
+    CMP.rowsMeta.push({ label, c });
     const f = (CMP.fx[r.cur] || 1) / (CMP.fx[t] || 1);
     const val = v => v == null ? '' : v * f;
     if (mode === 'fy') {
@@ -2406,6 +2583,7 @@ function buildCompare() {
     }
     if (keepGran && M.views[keepGran].periods.length && keepGran !== M.gran) setGran(keepGran); else render();
     syncControls();
+    if (CMP.dir === 'v') { renderLogoList(); ensureLogos(); }
     if (CMP.view === 'donut' || CMP.view === 'stack') ensureSeg().catch(e => setStatus(e && e.code ? mcpErrMsg(e) : '読み込みに失敗しました: ' + esc(e && e.message || e), true));
   }
 }
@@ -2727,6 +2905,18 @@ function bindCompare() {
     if (CMP.view === 'trend') buildCompare();
     else if (CMP.loaded && CMP.loaded.length) ensureSeg().catch(err => setStatus(err && err.code ? mcpErrMsg(err) : '読み込みに失敗しました: ' + esc(err && err.message || err), true));
   };
+  $('#cmpDir').onchange = e => {
+    CMP.dir = e.target.value;
+    $('#cmpLogoBox').style.display = CMP.dir === 'v' ? '' : 'none';
+    // 縦並びは 10 年（40 四半期）を初期表示に
+    if (CMP.dir === 'v' && M && M.periods) { const L = M.periods.length; O.nQ = Math.min(L, M.gran === 'Y' ? 10 : 40); O.nByG = O.nByG || {}; O.nByG[M.gran] = O.nQ; O.endIdx = L - 1; syncControls(); }
+    if (CMP.dir === 'v') { renderLogoList(); ensureLogos(); }
+    render();
+  };
+  $('#cmpLogos').onchange = async e => { const id = e.target.dataset && e.target.dataset.id, f = e.target.files && e.target.files[0]; if (!id || !f) return;
+    const c = (CMP.rowsMeta || []).map(x => x.c).find(x => x.id === id); if (!c) return;
+    try { saveLogo(c, await readLogoFile(f)); renderLogoList(); render(); } catch (err) { toast('画像を読み込めませんでした'); } };
+  $('#cmpLogos').onclick = e => { const id = e.target.dataset && e.target.dataset.del; if (!id) return; const c = (CMP.rowsMeta || []).map(x => x.c).find(x => x.id === id); if (c) { saveLogo(c, null); renderLogoList(); render(); } };
   $('#cmpSegPick').onchange = e => { const id = e.target.dataset && e.target.dataset.id; if (!id) return; CMP.segPick[id] = e.target.value; buildCompare(); };
   $('#cmpSegKw').oninput = e => { CMP.segKw = e.target.value; CMP.segPick = {}; clearTimeout(bindCompare._k); bindCompare._k = setTimeout(() => { renderSegPick(); buildCompare(); }, 300); };
   $('#cmpSegMetric').onchange = e => { CMP.segMetric = e.target.value; CMP.segPer = null; fillSegPeriods(); render(); };

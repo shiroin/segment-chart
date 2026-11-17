@@ -314,6 +314,24 @@ function getRanges(id, ranges, fresh) {
   return out;
 }
 
+/** 会社比較（縦並び）のロゴ：Google ドライブの画像ファイル ID を受け取り、data URL を返す（6 時間保存）。
+ *  初めて使うときは Google ドライブを読む許可を求められる。読めないファイルは null。 */
+function getLogos(ids) {
+  const c = CacheService.getUserCache(), out = {};
+  (ids || []).slice(0, 60).forEach(id => {
+    try {
+      const key = cacheKey_('logo|' + id), hit = c.get(key);
+      if (hit) { out[id] = hit; return; }
+      const blob = DriveApp.getFileById(id).getBlob(), bytes = blob.getBytes();
+      if (bytes.length > 700000) { out[id] = null; return; }
+      const url = 'data:' + (blob.getContentType() || 'image/png') + ';base64,' + Utilities.base64Encode(bytes);
+      if (url.length < 100000) c.put(key, url, 21600);
+      out[id] = url;
+    } catch (e) { out[id] = null; }
+  });
+  return out;
+}
+
 /** 診断用：GitHub から画面を取得できるか確認する（エディタで選んで「実行」→ 実行ログを見る）
  *  「外部サービスへの接続（script.external_request）」の許可がないと、doGet は黙って古い index.html を使う。
  *  初回はこれを実行すると許可画面が出るので、許可しておく。 */
