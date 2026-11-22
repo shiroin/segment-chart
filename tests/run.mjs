@@ -68,6 +68,8 @@ const mcpMock = () => {
     describeTool: async (s, t) => ({ inputSchema: { properties: t === 'get_spreadsheet' ? { spreadsheetId: {}, fields: {} } : { spreadsheetId: {}, range: {} } } }),
     callTool: async (s, t, inp) => {
       if (t === 'get_spreadsheet') { const ts = await window.__titles(inp.spreadsheetId); return { payload: { properties: { title: 'book' }, sheets: ts.map(title => ({ properties: { title } })) } }; }
+      // 一時的な失敗（読み込み回数の制限）を再現する
+      if (window.__flaky && window.__flaky[inp.spreadsheetId] > 0) { window.__flaky[inp.spreadsheetId]--; throw { code: 'upstream_error', message: 'Quota exceeded (429)' }; }
       const v = await window.__sheet(inp.spreadsheetId, inp.range);
       if (!v) throw { code: 'tool_error', message: 'Unable to parse range' };
       return { payload: { range: inp.range, values: v } };
@@ -193,6 +195,7 @@ console.log('3. Claude 版：会社比較');
   await p.click('#loadMaster');
   await p.waitForTimeout(800);
   ok(/3社/.test(await status(p)), 'マスターの会社一覧を読む');
+  await p.evaluate(() => { window.__flaky = { COMPANY_B_0123456789abcdef: 2 }; });
   ok(await p.$eval('#cmpGroup', e => [...e.options].map(o => o.text).join('|')) === 'カテゴリーでまとめて選ぶ…|AI（2社・発表済み 1/2）|海運（1社・発表済み 0/1）', 'AV〜EE 列のカテゴリーと発表済みの数を読む: ' + await p.$eval('#cmpGroup', e => [...e.options].map(o => o.text).join('|')));
   await p.selectOption('#cmpGroup', '海運');
   ok(/発表済み 0\/1社/.test(await p.$eval('#cmpGroupInfo', e => e.innerText)) && /全社そろう見込み：2999\/12\/31/.test(await p.$eval('#cmpGroupInfo', e => e.innerText)), '決算の進み具合と全社そろう見込みを出す');
@@ -204,8 +207,8 @@ console.log('3. Claude 版：会社比較');
   await p.selectOption('#cmpGroup', 'AI'); await p.click('#cmpGroupAdd');
   ok(await p.evaluate(() => CMP.sel.length === 3) && await p.$$eval('#cmpList input:checked', a => a.length) === 3, '「追加」で今の選択に加える（一覧のチェックにも反映）');
   await p.click('#cmpGo');
-  await p.waitForTimeout(1000);
-  ok(/3社 を読み込みました/.test(await status(p)), '3社を比較表示');
+  await p.waitForTimeout(3500);
+  ok(/3社 を読み込みました/.test(await status(p)) && await p.evaluate(() => window.__flaky.COMPANY_B_0123456789abcdef === 0), '一時的に読めなかった会社もやり直して読み込む（3社を比較表示）');
   ok(await p.evaluate(() => M.segs.filter(s => s.pbt).map(s => s.label).join() === 'ガンマ商事'), 'profit_before_tax しかない会社は税引前利益を「営業利益」として読む');
   const pn = await p.$$eval('#chart svg text', a => a.map(t => t.textContent).filter(t => /税引前当期純利益/.test(t)));
   ok(pn.length === 1 && /ガンマ商事/.test(pn[0]) && !/アルファ|ベータ/.test(pn[0]), '税引前利益の会社だけを注意書きに出す: ' + pn[0]);

@@ -2252,7 +2252,12 @@ async function readRanges(id, ranges) {
   const out = {};
   await Promise.all(ranges.map(async r => {
     try { out[r] = findGrid(payloadOf(await mcpTool(mcp, 'get_values', id, { range: r }))) || []; }
-    catch (e) { if (e && e.code && e.code !== 'tool_error') throw e; out[r] = null; }
+    catch (e) {
+      // シートがない（範囲を解釈できない）ときだけ「なし」として扱う。それ以外（通信・回数制限など）は呼び出し元でやり直す
+      const msg = String((e && (e.message || e.detail || e.error)) || e || '');
+      if (/parse range|unable to parse|not found|見つかりません|存在しません|does not exist/i.test(msg) || (e && e.code === 'tool_error' && !/quota|rate|limit|429|5\d\d|timeout|unavailable/i.test(msg))) { out[r] = null; return; }
+      throw e;
+    }
   }));
   return out;
 }
@@ -2265,7 +2270,13 @@ async function readTitles(id) {
 async function mcpTool(mcp, tool, id, extra) {
   let sch = await toolSchema(mcp, tool);
   const inp = buildInput(sch, id, '', extra);
-  const call = async i => { try { return await mcp.callTool(GS, tool, i, { cache: false }); } catch (e) { if (e && e.retryable) { await sleep((e.retryAfterMs || 800) + Math.random() * 500); return await mcp.callTool(GS, tool, i, { cache: false }); } throw e; } };
+  // 読み込み回数の制限などで一時的に失敗したときは、間をあけて最大 4 回までやり直す
+  const call = async i => {
+    for (let k = 0; ; k++) {
+      try { return await mcp.callTool(GS, tool, i, { cache: false }); }
+      catch (e) { if (e && e.retryable && k < 3) { await sleep((e.retryAfterMs || 900 * Math.pow(2, k)) + Math.random() * 600); continue; } throw e; }
+    }
+  };
   try { return await call(inp); }
   catch (e) {
     if (!sch && e && (e.code === 'tool_error' || e.code === 'upstream_error')) { sch = await toolSchema(mcp, tool); if (sch) return await call(buildInput(sch, id, '', extra)); }
@@ -2412,7 +2423,7 @@ function renderFx(curs) {
 }
 async function fetchCompany(c) {
   if (CMP.raw[c.id]) return CMP.raw[c.id];
-  const R = { set: q('設定') + '!A1:H60', Q: q('会社全体_四半期') + '!A1:D400', Y: q('会社全体_年度') + '!A1:D200' };
+  const R = { set: q('設定') + '!A1:H60', Q: q('会社全体_四半期') + '!A1:J400', Y: q('会社全体_年度') + '!A1:J200' };
   const got = await readRanges(c.id, Object.values(R));
   const cfg = {};
   let usedPbt = false;
@@ -2428,7 +2439,8 @@ async function fetchCompany(c) {
   })();
   const pick = rows => {
     rows = rows || [];
-    const hi = rows.findIndex(r => r.some(x => /^period$/i.test(String(x).trim())));
+    let hi = rows.findIndex(r => r.some(x => /^period$/i.test(String(x).trim())));
+    if (hi < 0) hi = rows.slice(0, 12).findIndex(r => r.some(x => HN.period.includes(normH(x))) && r.some(x => HN.sales.includes(normH(x)) || HN.op.includes(normH(x)) || HN.pbt.includes(normH(x))));
     if (hi < 0) return [];
     const h = rows[hi].map(x => normH(x));
     const pi = h.findIndex(x => HN.period.includes(x)), si = h.findIndex(x => HN.sales.includes(x)), pc = profitCol(rows[hi]), oi = pc.i;
@@ -2439,9 +2451,17 @@ async function fetchCompany(c) {
   const monthOf = t => { const m = half(t || '').match(/(\d{1,2})\s*月/); return m && +m[1] >= 1 && +m[1] <= 12 ? +m[1] : null; };
   const raw = { cur: curP.code === 'custom' ? 'JPY' : curP.code, name: cfg.company_name || '', Q: pick(got[R.Q]), Y: pick(got[R.Y]),
     fyMonth: monthOf(c.fy) || monthOf(cfg.note) || null, pbt: usedPbt, segMeta };
+  // 読めなかった理由（「読み込めなかった会社」の表示用）
+  if (!raw.Q.length && !raw.Y.length) {
+    const has = x => Array.isArray(got[x]) && got[x].length;
+    raw.why = !has(R.Q) && !has(R.Y) ? (got[R.Q] == null && got[R.Y] == null ? '「会社全体_四半期／年度」シートがない' : '「会社全体」シートが空')
+      : !pick(got[R.Q]).length && !pick(got[R.Y]).length && ![got[R.Q], got[R.Y]].some(rs => (rs || []).some(r => r.some(x => HN.period.includes(normH(x))))) ? '「period」の見出し行がない' : '数値が入っていない';
+    return raw;   // 空のときは覚えない（シートを直したら読み直せるように）
+  }
   CMP.raw[c.id] = raw;
   return raw;
 }
+const bindRetry = () => { const a = document.getElementById('cmpRetry'); if (a) a.onclick = e => { e.preventDefault(); runCompare(); }; };
 async function runCompare() {
   const byId = Object.fromEntries(CMP.companies.map(c => [c.id, c]));
   const list = CMP.sel.map(id => byId[id]).filter(Boolean);
@@ -2450,21 +2470,31 @@ async function runCompare() {
   try {
     let done = 0;
     const res = [];
-    for (let i = 0; i < list.length; i += 8) {   // 8社ずつ並行して読む
-      const part = await Promise.all(list.slice(i, i + 8).map(async c => {
-        try { const r = await fetchCompany(c); done++; setStatus(`各社の Financials を読み込み中… ${done}/${list.length}`); return { c, r }; }
-        catch (e) { if (e && e.code && !['tool_error'].includes(e.code)) throw e; return { c, r: null }; }
-      }));
+    // 4 社ずつ並行して読む。一時的な失敗（通信・読み込み回数の制限など）は、間をあけて 3 回までやり直す
+    const fatal = e => e && ['not_granted', 'noclaude'].includes(e.code);
+    const one = async c => {
+      let last = null;
+      for (let k = 0; k < 3; k++) {
+        if (k) await sleep(k === 1 ? 1500 : 4000);
+        try { const r = await fetchCompany(c); if (r && (r.Q.length || r.Y.length || r.why)) return { c, r }; }
+        catch (e) { if (fatal(e)) throw e; last = e; }
+      }
+      return { c, r: null, err: last };
+    };
+    for (let i = 0; i < list.length; i += 4) {
+      const part = await Promise.all(list.slice(i, i + 4).map(async c => { const x = await one(c); done++; setStatus(`各社の Financials を読み込み中… ${done}/${list.length}`); return x; }));
       res.push(...part);
     }
     const ok = res.filter(x => x.r && (x.r.Q.length || x.r.Y.length)), ng = res.filter(x => !(x.r && (x.r.Q.length || x.r.Y.length)));
-    if (!ok.length) { setStatus('会社全体のデータが見つかりませんでした（「会社全体_四半期」「会社全体_年度」シートを確認してください）', true); return; }
+    const ngText = () => ng.map(x => `${esc(cmpName(x.c))}（${esc(x.r && x.r.why ? x.r.why : '読み込みエラー' + (x.err && (x.err.message || x.err.code) ? '：' + String(x.err.message || x.err.code).slice(0, 60) : ''))}）`).join('、');
+    const retryLink = ng.some(x => !(x.r && x.r.why)) ? ' <a href="#" id="cmpRetry">もう一度読む</a>' : '';
+    if (!ok.length) { setStatus(`会社全体のデータを読み込めませんでした：${ngText()}${retryLink}`, true); bindRetry(); return; }
     CMP.loaded = ok;
     const curs = [...new Set(ok.map(x => x.r.cur))];
     if (!CMP.userCur) CMP.cur = curs.length === 1 ? curs[0] : (curs.includes('JPY') ? 'JPY' : 'JPY');
     renderFx(curs);
     buildCompare();
-    if (ng.length) setStatus($('#status').innerHTML + `<br><span style="color:#b45309">⚠ 読み込めなかった会社: ${ng.map(x => esc(cmpName(x.c))).join('、')}</span>`);
+    if (ng.length) { setStatus($('#status').innerHTML + `<br><span style="color:#b45309">⚠ 読み込めなかった会社：${ngText()}</span>${retryLink}`); bindRetry(); }
   } catch (e) { setStatus(e && e.code ? mcpErrMsg(e) : '読み込みに失敗しました: ' + esc(e && e.message || e), true); }
   finally { btn.disabled = false; renderCmpSel(); }
 }
@@ -2672,7 +2702,12 @@ async function ensureSeg() {
     setStatus(`各社のセグメントを読み込み中… 0/${need.length}`);
     for (let i = 0; i < need.length; i += 8) {
       await Promise.all(need.slice(i, i + 8).map(async x => {
-        try { await fetchSeg(x.c); } catch (e) { if (e && e.code && e.code !== 'tool_error') throw e; x.r.seg = { sQ: { names: [], rows: [] }, sY: { names: [], rows: [] }, oQ: { names: [], rows: [] }, oY: { names: [], rows: [] } }; }
+        let okk = false;
+        for (let k = 0; k < 3 && !okk; k++) {
+          if (k) await sleep(k === 1 ? 1500 : 4000);
+          try { await fetchSeg(x.c); okk = true; } catch (e) { if (e && ['not_granted', 'noclaude'].includes(e.code)) throw e; }
+        }
+        if (!okk) x.r.seg = { sQ: { names: [], rows: [] }, sY: { names: [], rows: [] }, oQ: { names: [], rows: [] }, oY: { names: [], rows: [] } };
         done++; setStatus(`各社のセグメントを読み込み中… ${done}/${need.length}`);
       }));
     }
@@ -2946,7 +2981,7 @@ function bindCompare() {
    ========================================================= */
 (function init() { try {
   // 版の表示（build 時に日時が入る。Apps Script 版は取得元も出す）
-  const BUILD = '2026-11-17 19:41';
+  const BUILD = '2026-11-22 14:03';
   const showVer = () => {   // Apps Script が後ろに付ける目印（__PAGE_SRC）はページの最後で読まれるので、読み込み後に表示する
     const src = window.__PAGE_SRC === 'github' ? '・GitHubから取得' : window.__PAGE_SRC === 'local' ? '・Apps Script内の古いindex（Code.gsを更新してください）' : IS_GAS ? '・取得元不明（Code.gsが古い可能性）' : '';
     $('#ver').textContent = (BUILD.indexOf('BUILD') < 0 ? '版 ' + BUILD : '') + src;
